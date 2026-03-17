@@ -1,0 +1,49 @@
+model_path:
+  default_value: ""
+  widget_type: path
+  tooltip: Path to .keras file containing the trained model
+  flags: ["required"]
+  extra:
+    path_type: file
+
+load_model_kwargs:
+  backbone:
+    default_value: null
+    widget_type: str
+    tooltip: "Backbone architecture used in the model."
+    group: load_model_kwargs
+
+  n_classes:
+    default_value: 1
+    widget_type: int
+    tooltip: number of classes returned in model prediction
+    group: load_model_kwargs
+
+preprocessing_kwargs:
+  dtype: 
+    default_value: 'float64'
+    widget_type: str
+    tooltip: Output of preprocessing will be converted to this dtype
+    group: preprocessing_kwargs
+
+predict_kwargs:
+  BinPredThresh:
+    default_value: 0.5
+    widget_type: float
+    tooltip: threshold for prediction 
+    group: predict_kwargs
+  patch_shape:
+    default_value: [256, 256]
+    widget_type: tuple
+    tooltip: patch shape of model input
+    group: predict_kwargs
+  
+
+postprocessing_kwargs:
+  remove_small_objs_size:
+    default_value: null
+    widget_type: float
+    tooltip: objects smaller than this size will be removed during post-processing of the prediction
+    group: postprocessing_kwargs
+
+

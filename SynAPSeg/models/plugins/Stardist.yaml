@@ -1,0 +1,67 @@
+model_path:
+  default_value: ""
+  widget_type: path
+  tooltip: Path to directory containing the trained model
+  flags: ["required"]
+  extra:
+    path_type: directory
+
+predict_kwargs:
+  n_tiles: 
+    default_value: null
+    widget_type: tuple
+    tooltip: size of tiles to feed into model input. if None, estimatation is made using stardist.model._guess_n_tiles
+    group: predict_kwargs
+
+  scale: 
+    default_value: 1.0
+    widget_type: float
+    tooltip: Scale factor for prediction
+    group: predict_kwargs
+
+  prob_thresh:
+    default_value: null
+    widget_type: float
+    tooltip: |
+      model threshold for prediction, 
+      - if None uses default, optimized value determined on training dataset
+      - lower values allow more predictions but can be less accurate
+    group: predict_kwargs
+
+  nms_thresh:
+    default_value: null
+    widget_type: float
+    tooltip: |
+      model threshold for non-mizimal suppression
+      - if None uses default, optimized value determined on training dataset
+      - higher values allow denser predictions but can overlap too much
+    group: predict_kwargs
+  
+  prediction_padding:
+    default_value: null
+    widget_type: int
+    tooltip: apply uniform padding before prediction and unpad after.
+    group: predict_kwargs
+  
+preprocessing_kwargs:
+  norm:
+    default_value: [1, 99.99]
+    widget_type: tuple
+    tooltip: | 
+      Normalization percentile range for the input to the preprocessing function. 
+        (1, 99.99) is a good default if input is 3d, but if image is 2d or max projected over the z-axis, use 99.9 or 99.8 depending on the image.
+      Note: 
+        input here refers to input to preprocessing, not the predict function.
+      Example:
+        Given an 3d input, preprocessing axes will be applied on ZYX chunks, by default (iterating over axes STC; the non-spatial dimensions),
+        even if the input to the model is 2d (e.g. out_dims_pipe='STCYX'). 
+        The mip is generated therfore from the normalized volume, after preprocessing. 
+        So, for 3d input use (1,99.99) and for 2d input use (1,99.9).
+    group: preprocessing_kwargs
+
+load_model_kwargs:
+  weights_filename:
+    default_value: 'weights_best.h5'
+    widget_type: str
+    tooltip: filename of model weights to load. Typically only either 'weights_best.h5' or 'weights_last.h5'
+    group: load_model_kwargs

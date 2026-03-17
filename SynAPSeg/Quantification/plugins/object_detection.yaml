@@ -1,0 +1,49 @@
+# object detection
+RPS_TO_GET:
+  default_value: ['label', 'area', 'bbox', 'centroid', 'intensity_mean', 'intensity_min', 'intensity_max',  'axis_major_length', 'axis_minor_length']
+  widget_type: multi-selection
+  tooltip: |
+    Properties to calculate for each object, can be anything accepted by skimage.measure.regionprops.
+    Notes: 
+      - label must always be included. 
+      - `coords` is handled separately below due to roi assignment module dependencies.
+  extra:
+    value_options: ['label', 'area', 'bbox', 'centroid', 'intensity_mean', 'intensity_min', 'intensity_max',  'axis_major_length', 'axis_minor_length', 'perimeter', 'num_pixels', 'intensity_std', 'solidity']
+
+ADDITIONAL_PROPS:
+  default_value: null
+  widget_type: multi-selection
+  tooltip: any parmeter accepted by skimage.measure.regionprops.
+  flags: ["hidden"]
+  extra:
+    value_options: ['perimeter', 'num_pixels', 'intensity_std', 'solidity', ...]
+
+EXTRA_PROPERTIES:
+  default_value: null
+  widget_type: multi-selection
+  tooltip: Extra properties to calculate for each object that are not directly available from skimage.measure.regionprops and instead use custom implementations.
+  extra:
+    value_options: ['uc.skewedness', 'uc.kurtosis', 'uc.circularity', 'uc.longest_skeleton_path']
+
+GET_OBJECT_COORDS:
+  default_value: True
+  widget_type: bool
+  tooltip: | 
+    Include coordinates property for each object. 
+    Only disable if you need to conserve memory - used by other modules but not strictly required e.g. if not using ROI assignment
+
+GET_CLC_ID_CH_INTENSITIES:
+  default_value: null
+  widget_type: dict_any_list
+  extra:
+    key_type: int       # dict[int, list[int]]
+    
+  tooltip: |
+    Extract intensity from target channels (dict values list[int]) for each object in the source channel (dict keys int). 
+      Format: {source_channel:[target_channels]}
+      e.g. {0: [1,2]} Would use the objects in channel zero to extract the intensity from channels 1 and 2.
+
+OBJECTS_IMAGE_SIZE_RANGE:
+  default_value: [-1, -1]
+  widget_type: tuple
+  tooltip: Minimum and maximum allowed object size (in pixels). -1/None is used to indicate no limit. 

@@ -1,0 +1,143 @@
+# Ignore Sphinx build output
+docs/build/
+
+# docs/source/modules.rst
+# docs/source/your_module_name.rst
+
+# model weights
+*.pth
+
+# Ignore Python cache files
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Ignore temporary files
+*.swp
+*.swo
+*.bak
+*~
+
+
+# C extensions
+*.so
+
+# Distribution / packaging
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Ignore image files
+# *.png
+# *.jpg
+# *.jpeg
+# *.gif
+# *.bmp
+
+# Ignore common data files
+*.dat
+*.log
+
+# Ignore specific directories
+/Models/
+/notebooks/
+/performance_testing/
+
+
+
+# Ignore binary files or executables
+*.exe
+*.dll
+*.so
+*.o
+*.a
+
+# Ignore OS generated files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+
+# PyInstaller
+# Usually these files are written by a python script from a template
+# before PyInstaller builds the exe, so as to inject date/other infos into it.
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pyenv
+.python-version
+
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# Documentation files
+__documentation__/
+
+
+
+# Other specific files you might want to ignore
+# Add them here
+/.vscode/
+pyrefly.toml
+
+# ignore user-specific config files and logs
+SynAPSeg/config/segmentation_config.yaml
+SynAPSeg/config/quantification_config.yaml
+SynAPSeg/config/training_datasets_config.yaml
+SynAPSeg/config/user_settings.yaml
+SynAPSeg/logs/
+*log.json
+
+# ignore specific testing/benchmarking images which are too large
+tests/data/
+datasets/benchmarks/

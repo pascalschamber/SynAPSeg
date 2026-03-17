@@ -1,0 +1,267 @@
+# default arguments for creating each project
+# RUN_CONFIG:
+IMG_DIR:
+  default_value: null
+  widget_type: path
+  tooltip: "Directory containing images (root directory)."
+  heading: Run Configuration
+  extra:
+    path_type: directory
+GET_FILETYPE:
+  default_value: ".czi"
+  widget_type: str
+  tooltip: "File extension for the images to process."
+  heading: Run Configuration
+GET_CONTENTS_FUNCTION:
+  default_value: "get_contents"
+  extra:
+    value_options: ["get_contents", "get_contents_recursive"]
+  widget_type: selection
+  tooltip: |
+    Function used to retrieve file contents.
+    get_contents: retrieve files from a directory
+    get_contents_recursive: retrieve files from a directory and its nested subdirectories
+  heading: Run Configuration
+GET_FILE_PATTERN:
+  default_value: null
+  widget_type: str
+  tooltip: |
+    Regex pattern for matching files, operates on the filename (not full path).
+    For more info see online resources,e.g. https://docs.python.org/3/howto/regex.html
+  heading: Run Configuration
+
+MODELS_BASE_DIR:
+  default_value: !ENV ${MODELS_BASE_DIR}
+  widget_type: directory
+  tooltip: "Directory containing models."
+  heading: Run Configuration
+  flags: ["hidden"]
+ROOT_DIR:
+  default_value: !ENV ${ROOT_DIR}
+  widget_type: directory
+  tooltip: "Root Directory containing raw image data directory."
+  heading: Run Configuration
+  flags: ["hidden"]
+
+# buttons
+###########################################################################################
+IS_NEW_RUN:
+  default_value: True
+  widget_type: bool
+  tooltip: "Indicates if this is a new run."
+  heading: Run Configuration
+
+LOG_RUN:
+  default_value: True
+  widget_type: bool
+  tooltip: "Whether to log the run."
+  heading: Run Configuration
+  flags: ["hidden"]
+USE_EXISTING:
+  default_value: False
+  widget_type: bool
+  tooltip: "Indicates to skip reading from source and use existing project for all data "
+  heading: Run Configuration
+  flags: ["hidden"]
+VALIDATE_IMAGE_FILENAME_ORDER:
+  default_value: True
+  widget_type: bool
+  tooltip: "check the order of the discovered image filenames matches the order found in the already existing examples. If not, tries to correct it."
+  heading: Run Configuration
+  flags: ["hidden"]
+SKIP_COMPLETED:
+  default_value: False
+  widget_type: bool
+  tooltip: "Skip already completed tasks."
+  heading: Run Configuration
+  flags: ["hidden"]
+FORCE_NO_SKIP:
+  default_value: false
+  widget_type: bool
+  tooltip: "If true, forces processing without skipping any files."
+  heading: Run Configuration
+  flags: ["hidden"]
+
+SEED:
+  default_value: 42
+  widget_type: int
+  tooltip: "Seed value for reproducibility."
+  heading: Run Configuration
+  extra:
+    value_range: [0, 999999]
+  flags: ["hidden"]
+SHUFFLE_IMAGE_PATHS:
+  default_value: false
+  widget_type: bool
+  tooltip: "If true, shuffles the image paths. Used for blinding to make image order random. Randomization is determined by the seed (42 by default)."
+  heading: Run Configuration
+SKIP_FORMAT_MISMATCHES:
+  default_value: False
+  widget_type: bool
+  tooltip: "If true, skips files with format mismatches instead of raising an error."
+  heading: Run Configuration
+SHOW_FIGURES:
+  default_value: false
+  widget_type: bool
+  tooltip: "Set to true to display figures."
+  heading: Run Configuration
+  flags: ["hidden"]
+WRITE_OUTPUT:
+  default_value: true
+  widget_type: bool
+  tooltip: "Write output files."
+  heading: Run Configuration
+OUTPUT_IMAGE_PYRAMID:
+  default_value: false
+  widget_type: bool
+  tooltip: "If true, write raw intensity input image to disk as a multi-resolution image pyramid (ome.tiff). Used for ABBA region mapping"
+  heading: Run Configuration
+ASSERT_N_CH:
+  default_value: null
+  widget_type: int
+  tooltip: "Assert that images have at least this number of channels. If null, infer from DATA_PARAMS.channel_info. If COERCE_SHAPE (default True), will add empty channels if an image has fewer than ASSERT_N_CH channels."
+  heading: Run Configuration
+COERCE_SHAPE:
+  default_value: True
+  widget_type: bool
+  tooltip: "If true, add empty channels if an image has fewer than ASSERT_N_CH channels."
+  heading: Run Configuration
+  flags: ["hidden"]
+init_segmentation_results_dpi:
+  default_value: 300
+  widget_type: int
+  tooltip: dpi for output summary figure
+  heading: Run Configuration
+
+  
+MIN_Z:
+  default_value: null
+  widget_type: int
+  tooltip: "Minimum Z height for gathering CZI images."
+  heading: Run Configuration
+  flags: ["hidden"]
+TESTING:
+  default_value: False
+  widget_type: bool
+  tooltip: "run segmentation in test mode (operate on subset of examples)"
+  heading: Run Configuration
+  flags: ["hidden"]
+
+
+# hidden - these are automatically configured based on other input parameters
+###########################################################################################
+PROJECT_NAME:
+  default_value: "${config_key}"
+  widget_type: str
+  tooltip: "name of the project, should be set automatically"
+  heading: Run Configuration
+  flags: ["hidden"]
+PROJECTS_ROOT_DIR:
+  default_value: !ENV ${PROJECTS_ROOT_DIR}
+  widget_type: str
+  tooltip: "path to root projects directory, should be set via env variable"
+  heading: Run Configuration
+  flags: ["hidden"]
+OUTPUT_DIR_PROJ:
+  default_value: "${PROJECTS_ROOT_DIR}/${PROJECT_NAME}"
+  widget_type: str
+  tooltip: "Project output directory. Defaults to (PROJECT_BASE_DIR \\ PROJECT_NAME)"
+  heading: Run Configuration
+  flags: ["hidden"]
+EXAMPLES_DIRNAME:
+  default_value: "examples"
+  widget_type: str
+  tooltip: "Name of the examples directory."
+  heading: Run Configuration
+  flags: ["hidden"]
+OUTPUT_DIR_EXAMPLES:
+  default_value: "${OUTPUT_DIR_PROJ}/${EXAMPLES_DIRNAME}"
+  widget_type: str
+  tooltip: "Directory to save example outputs. Defaults to (PROJECT_BASE_DIR \\ PROJECT_NAME \\ EXAMPLES_DIRNAME)"
+  heading: Run Configuration
+  flags: ["hidden"]
+example_metadata:
+  default_value:
+    errors: {}
+  widget_type: dict
+  tooltip: "Metadata associated with the examples."
+  heading: Run Configuration
+  flags: ["hidden"]
+image_filepaths_to_process:
+  default_value: []
+  widget_type: list
+  tooltip: "List of image file paths to process."
+  heading: Run Configuration
+  flags: ["hidden"]
+
+
+
+# DATA_PARAMS:
+input_image_format:
+  default_value: STCZYX
+  widget_type: str
+  tooltip: |
+    Format of the input images. 
+    Note: .czi files will always be read as STCZYX.
+
+    Example: 
+      CZYX for a multi-channel volume image.
+      YXC for 2d color image, if channels are last dimension
+      YX for 2d grayscale image
+  heading: Data
+channel_info:
+  widget_type: "dict_int_str"
+  default_value: null
+  tooltip:  "Information about the channels in the images. e.g. {405: 'channel0', ...}"
+  heading: Data
+take_dims:
+  default_value: ''
+  widget_type: str
+  tooltip: "A string containing the axis labels along which to take the first element"
+  heading: Data
+project_dims:
+  default_value: ''
+  widget_type: str
+  tooltip: "A string containing the axis labels along which to apply maximum intensity projection"
+  heading: Data
+THUMBNAIL_CMAPS_DEFAULT:
+  default_value: ['blue', 'green' , 'red', 'magenta']
+  widget_type: tuple
+  tooltip: "colormaps for display"
+  heading: Data
+
+DATA_METADATA:
+  widget_type: dict
+  tooltip: "contains data metadata"
+  heading: Data
+  default_value: {}
+    # 'channel_info': "${channel_info}"
+    # 'data_shapes': {}
+    # 'data_formats': {}
+    # 'input_image_format': "${input_image_format}"
+  flags: ["hidden"]
+
+MD_TEMPLATE:
+  default_value: {}
+    # data_metadata: "${DATA_METADATA}"
+    # image_path: null
+    # image_metadata: {}
+    # annotation_metadata: {'notes':'', 'status':''}
+    # COLOCALIZE_PARAMS: {'colocalizations': []}
+    # segmentation_pipeline_config: {}
+  widget_type: dict
+  tooltip: "Initialized during building of config"
+  heading: Data
+  flags: ["hidden"]
+
+# these are just for a skeleton of args - e.g. these are example templates but are not set during initialization explicitly
+###########################################################################################
+MODEL_PARAMS:
+  default_value: null
+  widget_type: SegConfigModelsField
+  tooltip: "model specific configuration attributes - see model for specifics"
+  heading: Model
+  
+
+
+   

@@ -1,0 +1,79 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "SynAPSeg"
+version = "0.1.0"
+description = "A library for synapse segmentation and analysis"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy==1.26.4",
+    "napari[pyqt5]",
+    "seaborn",
+    "tabulate",
+    "shapely",
+    "rasterio",
+    "geojson",
+    "fsspec",
+    "opencv-python",
+    "PyQt6",
+    "scikit-learn",
+    "numba",
+    "pingouin",
+    "stardist",
+    "tensorflow",              # "tensorflow<2.11", technically only req for windows native GPU support
+]
+
+# to test 
+##########################################
+# [project.optional-dependencies]
+# # GPU-specific stack (excludes models, adds acceleration libs)
+# GPU = [
+#     "gputools",
+#     "torch",
+#     "torchvision",
+#     "volumentations-3D",
+#     "albumentations",
+# ]
+
+# # Individual Model Libraries
+# stardist = ["stardist"]
+# cellpose = ["cellpose[gui]"]
+# careamics = ["careamics"]
+# segmentation-models = ["segmentation-models", "patchify"]
+
+# # Collective Model Option (Recursive install)
+# all_models = [
+#     "SynAPSeg[stardist,cellpose,careamics,segmentation-models]"
+# ]
+
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["SynAPSeg", "SynAPSeg.*"]
+namespaces = false
+
+[tool.black]
+line-length = 88
+target-version = ['py310']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | _build
+  | buck-out
+  | build
+  | dist
+)/
+'''
+
+[project.scripts]
+synapseg = "SynAPSeg.UI.main:main"

@@ -1,0 +1,64 @@
+# GENERAL - ABBA SPECIFIC
+STRUCTS_PATH:
+  default_value: ""
+  widget_type: str
+  tooltip: |
+    Path to structures .csv file for the registered atlas
+    Must contain columns: name,	acronym,	id,	structure_id_path,	parent_structure_id
+    This may be found in {home_location}\.brainglobe\{atlas_name}
+
+# EXCLUSION ROI HANDLING
+ROIS_NAME:
+  default_value: "to_exclude_areas.csv"
+  widget_type: str
+  tooltip: |
+    name of exported Napari shapes layer, other types not currently supported
+    if the filename is not found in an example's folder it will not raise an error
+
+HANDLE_ROI_TYPE:
+  default_value: "exclude"
+  widget_type: selection
+  tooltip: exclude - treats the ROI as containing regions to exclude from the atlas regions e.g. image artifacts, bubbles, etc.
+  extra:
+    value_options: [exclude]
+
+ROI_READER:
+  default_value: "napari_csv"
+  widget_type: selection
+  tooltip: reader for the filename defined by ROIS_NAME
+  extra:
+    value_options: [napari_csv]
+
+ROI_SPATIAL_COLS:
+  default_value: 
+    Y: "axis-0"
+    X: "axis-1"
+  widget_type: dict
+  tooltip: column names in Napari shapes csv file that define coordinates of the geometry
+
+# UTILIZED DURING COUNT COMPILING
+REGION_INDEXERS:
+  default_value: ['roi_i', 'region_sides']
+  widget_type: multi-selection
+  tooltip: "dataframe cols (in region_df) which define unique sets of region polys (have different mapping of poly_i to regions)"
+  extra:
+    value_options: ['roi_i', 'region_sides']
+
+POPULATION_INDEXERS:
+  default_value: ['roi_i', 'colocal_id', 'ch_name']
+  widget_type: multi-selection
+  tooltip: "dataframe cols (in rpdf) which define populations which may have unique region counts within a structural context (defined by REGION_INDEXERS)"
+  extra:
+    value_options: ['roi_i', 'colocal_id', 'ch_name']
+
+REGION_AREA_COL:
+  default_value: "region_area_mm"
+  widget_type: selection
+  tooltip: area to use for calculating density (region_count/region_area)
+  extra:
+    value_options: [region_area_mm, region_area_um, region_area_px]
+
+LARGEST_HEMISPHERE_ONLY:
+  default_value: False
+  widget_type: bool
+  tooltip: if True, extracts results for only the hemisphere with most detected objects

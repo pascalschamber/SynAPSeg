@@ -1,0 +1,57 @@
+name: synapseg
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  # Python <3.11 for compatibility
+  - python=3.10
+  - pip
+  - wheel
+  - setuptools
+
+  - pip:
+      # ---- TensorFlow (CPU) ----
+      # The default pip package is CPU-only if no GPU libs are installed
+      - "numpy==1.26.4"
+
+
+
+      # ---- Imaging / analysis stack ----
+      - "napari[all]"
+      - seaborn
+      - ipykernel
+      - tabulate
+      - shapely
+      - rasterio
+      - geojson
+      - fsspec
+      - opencv-python
+      - PyQt6
+      - patchify
+      - imageio
+      - aicsimageio
+      - aicspylibczi
+      - pylibCZIrw
+      - scikit-learn
+      - csbdeep
+      - numba
+      - pingouin
+      
+      
+      # ML libaries - each is `optional`, only need to install if want to use it
+      - "tensorflow<2.11"
+      # ---- PyTorch CPU wheels ----
+      # Use official CPU index URL
+      # - "torch --index-url https://download.pytorch.org/whl/cpu"
+      # - "torchvision --index-url https://download.pytorch.org/whl/cpu"
+
+      # model libraries - each is `optional`, only need to install if want to use it
+      - stardist
+      # - cellpose[gui]
+      # - segmentation-models
+      # - careamics
+
+      # used for augmentation when training models 
+      # - volumentations-3D
+      # - albumentations
+

@@ -1,0 +1,59 @@
+name: synapseg
+channels:
+  - conda-forge
+  - apple
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+  - wheel
+  - setuptools
+  - cmake  # Needed for compiling some C++ extensions on Mac
+  - h5py   
+  - grpcio # Common failure point on Mac pip installs
+  - gdal 
+  - rasterio
+  - llvmlite 
+  - numba
+  - numpy=1.26.4
+
+  - pip:
+      - "numpy==1.26.4"     # essential requirement to get all libraries to cooperate
+      
+      # ---- TensorFlow (Mac Specific) ----
+      # Note: tensorflow-metal adds GPU acceleration for M1/M2/M3 chips and replaces tensorflow entirely
+      - tensorflow-macos
+      - tensorflow-metal 
+
+      # Older macs can try installing tensorflow alone (comment out above lines)
+      # - tensorflow
+      
+      # ---- PyTorch ----
+      - torch
+      - torchvision
+
+      # ---- Imaging / analysis stack ----
+      - "napari[all]"
+      - seaborn
+      - ipykernel
+      - tabulate
+      - shapely
+      - geojson
+      - fsspec
+      - opencv-python
+      - PyQt6
+      - patchify
+      - imageio
+      - aicsimageio
+      - aicspylibczi
+      - pylibCZIrw
+      - scikit-learn
+      - csbdeep
+      - pingouin
+      - bioformats_jar
+      
+      # ---- Model Libraries ----
+      - stardist
+      - cellpose[gui]
+      - segmentation-models
+      - careamics

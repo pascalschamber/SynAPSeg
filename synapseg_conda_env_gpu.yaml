@@ -1,0 +1,64 @@
+name: synapseg
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10 # Python <3.11 required for tensorflow GPU compatibility on windows
+  - pip
+  - wheel
+  - setuptools
+  
+  # CUDA 11.2 + cuDNN 8.1 from conda-forge (needed for TF 2.10 GPU on Windows)
+  - cudatoolkit=11.2
+  - cudnn=8.1.0
+
+  - pip:
+      
+      - "numpy==1.26.4"
+
+      # ---- TensorFlow stack (GPU) ----
+      - "tensorflow<2.11"
+      
+      # ---- PyTorch (CUDA 12.9 wheels) ----
+      # These wheels bundle their own CUDA runtime; using the official PyTorch index.
+      # They will depend on the host's PC 
+      # - "torch --index-url https://download.pytorch.org/whl/cu129"
+      # - "torchvision --index-url https://download.pytorch.org/whl/cu129"
+      - torch
+      - torchvision
+
+      # model libraries - each is `optional`, only need to install if want to use it
+      - stardist
+      - gputools
+      - cellpose[gui]
+      - segmentation-models
+      - careamics
+
+      # ---- Training / Image Augmentation ----
+      - volumentations-3D
+      - albumentations
+
+      # ---- all other libraries  ----
+      - "napari[all]"
+      - seaborn
+      - ipykernel
+      - tabulate
+      - shapely
+      - rasterio
+      - geojson
+      - fsspec
+      - opencv-python
+      - PyQt6
+      - patchify
+      - imageio
+      - aicsimageio
+      - aicspylibczi
+      - pylibCZIrw
+      - scikit-learn
+      - csbdeep
+      - numba
+      - pingouin
+      
+      # if realizing missed a library add below, then once confirm env setup, add back up top
+      - bioformats_jar # added 1/28 to support bioformats reader via AICSImage, need to add this everywhere except this file
+      

@@ -1,0 +1,25 @@
+# COLOCALIZATION PARAMETERS:
+COLOCALIZATIONS:
+  default_value: []
+  widget_type: list_list_int
+  tooltip: List[list[int, ...]] - channels to colocalize e.g. [[0,1], [1,0]]
+  
+COLOC_INTERSECTION_THRESHOLD:
+  default_value: 0.00
+  widget_type: float
+  tooltip: |
+    intersection-over-union threshold; values greater than this will be considered colocalized.   
+    We almost always want to use the default 0, so if at least 1 pixel overlaps == colocalized. This so we can 
+    choose an appropriate threshold during analysis, rather than making it impossible to decrease 
+    the threshold later.
+  
+SEPARATE_COLOCALIZATIONS:
+  default_value: True
+  widget_type: bool
+  tooltip: |
+    If true, remove uncolocalized, non-unique detections 
+      For instance, if detections from coloc of channels [0,1] are assigned as colocal_id 2,
+      remove detections from clc0 and clc1 found within clc2 detections - 
+      i.e. only keep the detections from clc0 and clc1 that are not within clc2 detections and
+      thus clc0 and clc1 will represent purely non-colocalized detections
+  

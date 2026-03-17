@@ -1,0 +1,98 @@
+model_path:
+  default_value: ""
+  widget_type: path
+  tooltip: Path to the trained model
+  flags: ["hidden"]
+
+load_model_kwargs:
+  weights_filename:
+    default_value: 'weights_best.h5'
+    widget_type: str
+    tooltip: "name of weights file"
+    group: load_model_kwargs
+  
+
+preprocessing_kwargs:
+  dtype: 
+    default_value: 'float32'
+    widget_type: str
+    tooltip: Output of preprocessing will be converted to this dtype
+    group: preprocessing_kwargs
+  norm:
+    default_value: [1, 99.9]
+    widget_type: tuple
+    tooltip: Normalization percentile range
+    group: preprocessing_kwargs
+
+train_kwargs:
+  crop_size:
+    default_value: null
+    widget_type: tuple
+    tooltip: Shape of patches to extract for training. must be same size as in_dims_model, e.g. [16, 1024, 1024] (Z, Y, X) for 3D or [Y,X] for 2D
+    group: train_kwargs
+  
+  train_mode:
+    default_value: 'single'
+    widget_type: 'str'
+    tooltip: Determines whether model is trained for each example or over all images in a project. single = train model for each image
+    group: train_kwargs
+  
+  plot_train_history:
+    default_value: true
+    widget_type: bool
+    tooltip: Whether to plot training history after completion
+    group: train_kwargs
+
+  # below params are fed into careamics.config.create_n2v_configuration
+  batch_size:
+    default_value: 8
+    widget_type: int
+    tooltip: Batch size
+    group: train_kwargs
+  
+  patch_size: 
+    default_value: null
+    widget_type: tuple
+    tooltip: |
+      Size of the patches along the spatial dimensions (e.g. [64, 64]). 
+      Must be same length as crop size. 
+      If None, uses [16, 64, 64] for 3D or [64, 64] for 2D
+    group: train_kwargs
+
+  epochs:
+    default_value: 25
+    widget_type: int
+    tooltip: Number of epochs for model training
+    group: train_kwargs
+  
+  use_n2v2:
+    default_value: True
+    widget_type: bool
+    tooltip: Whether to use N2V2 
+
+  roi_size:
+    default_value: 11
+    widget_type: int
+    tooltip: N2V pixel manipulation area, libraries default value is 11
+
+  masked_pixel_percentage:
+    default_value: 0.2
+    widget_type: float
+    tooltip: Percentage of pixels masked in each patch, libraries default value is 0.2
+
+  
+
+predict_kwargs:
+  tile_size:
+    default_value: null
+    widget_type: tuple
+    tooltip: tile size for prediction - more tiles saves memory 
+    group: predict_kwargs
+  
+postprocessing_kwargs:
+  outdtype:
+    default_value: 'float32'
+    widget_type: str
+    tooltip: set the dtype of prediction output, unlike segmentation models n2v needs this to be a float type
+    flags: ["hidden"]
+    group: postprocessing_kwargs

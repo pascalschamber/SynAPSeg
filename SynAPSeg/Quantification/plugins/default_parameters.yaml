@@ -1,0 +1,16 @@
+# these can be automatically inferred 
+###################################
+plugin_class:
+  default_value: null
+  widget_type: str
+  tooltip: optional - typically infered by model alias, unless multiple of same type used then name of model discoverable by model factory
+  heading: Stages
+  flags: ["hidden"]
+
+name:
+  default_value: null
+  widget_type: str
+  tooltip: "model object alias, optional. defaults to self."
+  heading: Stages
+  flags: ["hidden"]
+

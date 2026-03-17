@@ -1,0 +1,62 @@
+segmentation_config:
+  demo_3d:
+    channel_info:  
+      405: psd95
+    
+    IMG_DIR: !ENV ${ROOT_DIR}\datasets\demo3d
+    PROJECTS_ROOT_DIR: !ENV ${PROJECTS_ROOT_DIR}  # Output directory for the project
+    GET_FILETYPE: .tiff
+    # input_image_format: 'ZYX'
+        
+    MODEL_PARAMS:
+      stardist3d:
+        model_class: Stardist
+        model_path: !ENV ${MODELS_BASE_DIR}/stardist3d_2025_1125_v3.10_aug_minimal_32x128x128
+        preprocessing_kwargs:
+          norm:
+            [1,99.99]
+        load_model_kwargs: 
+          weights_filename: 
+            'weights_last.h5'
+        in_dims_model: "ZYX"
+        out_dims_pipe: "STCZYX"
+  
+  demo_2d:
+    channel_info:  
+      405: psd95
+    
+    IMG_DIR: !ENV ${ROOT_DIR}\datasets\demo2d
+    PROJECTS_ROOT_DIR: !ENV ${PROJECTS_ROOT_DIR}  # Output directory for the project
+    GET_FILETYPE: .tiff
+        
+    MODEL_PARAMS:
+      stardist:
+        model_class: Stardist
+        model_path: !ENV ${MODELS_BASE_DIR}/synapsedist2D_v3.6.0.8_augAffine_smallerGrid_long
+        preprocessing_kwargs:
+          norm:
+            [1,99.9]
+        load_model_kwargs: 
+          weights_filename: 
+            'weights_last.h5'
+        in_dims_model: "YX"
+        out_dims_pipe: "STCYX"
+
+quantification_config:
+  demo_3d:
+    EXAMPLES_BASE_DIR: !ENV ${PROJECTS_ROOT_DIR}
+    EXAMPLE_PROJ: demo_3d
+    OUTPUT_DIR_BASE: ${EXAMPLES_BASE_DIR}/${EXAMPLE_PROJ}
+    GET_CHS: null
+    GET_EXS: "all" 
+    
+    INTENSITY_IMAGE_NAME: "raw_img.tiff"
+    OBJECTS_IMAGE_NAME: "pred_stardist3d.tiff"
+    
+    STAGE_PARAMS:
+      object_detection:  
+        plugin_class: object_detection
+        name: object_detection
+        RPS_TO_GET: [label, area, bbox, centroid, intensity_mean, intensity_min, intensity_max, axis_major_length, axis_minor_length]
+        ADDITIONAL_PROPS: null
+        EXTRA_PROPERTIES: []

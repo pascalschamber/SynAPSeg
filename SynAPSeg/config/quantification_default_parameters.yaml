@@ -1,0 +1,167 @@
+# GENERAL PROJECT SETTINGS:
+EXAMPLES_BASE_DIR:
+  default_value: !ENV ${PROJECTS_ROOT_DIR}
+  widget_type: path
+  tooltip: path to base directory containing projects.
+  heading: General Project Settings
+  extra:
+    path_type: directory
+
+EXAMPLE_PROJ:
+  default_value: null
+  widget_type: str
+  tooltip: name of the project
+  heading: General Project Settings
+  flags: ["hidden"]
+
+EXAMPLE_DIRNAME:
+  default_value: 'examples'
+  widget_type: str
+  tooltip: name of directory within project folder to look for individual examples - only here if custom behavior is required
+  heading: General Project Settings
+  flags: ["hidden"]
+EXAMPLES_DIR:
+  default_value: ${EXAMPLES_BASE_DIR}\${EXAMPLE_PROJ}\${EXAMPLE_DIRNAME}
+  widget_type: str
+  tooltip: path to look for individual examples - only here if custom behavior is required
+  heading: General Project Settings
+  flags: ["hidden"]
+
+GET_EXS:
+  default_value: 'complete'
+  widget_type: selection
+  value_options: ['complete', 'all']
+  tooltip: 'Options: ''complete'', ''all'', or list of specific example folder names.'
+  heading: General Project Settings
+EXCLUDE_EXAMPLES:
+  default_value: []
+  widget_type: list
+  tooltip: Skip example directories with these names.
+  heading: General Project Settings
+  flags: ["hidden"]
+
+
+# OUTPUT CONFIGURATION:
+WRITE_OUTPUT:
+  default_value: true
+  widget_type: bool
+  tooltip: If false, files are not saved.
+  heading: General Project Settings
+OUTPUT_DIR_BASE:
+  default_value: ${EXAMPLES_BASE_DIR}\${EXAMPLE_PROJ}
+  widget_type: path
+  tooltip: "Output directory \u2014 defaults to project directory if null."
+  heading: General Project Settings
+  flags: ["hidden"]
+  extra:
+    path_type: directory
+CACHE_INTERMEDIATE_RESULTS:
+  default_value: True
+  widget_type: bool
+  tooltip: Whether to store outputs for each example in temp dir then compile, helpful if run gets interupted.
+  heading: General Project Settings
+
+  
+# EXTRACTION PARAMETERS:
+PIPELINE_STAGE_NAMES:
+  # widget_type: SegConfigModelsField
+  default_value: null
+  widget_type: list
+  # widget_type: multi-selection
+  # value_options: ['ROIHandlingStage', 'ObjectDetectionStage', 'ColocalizationStage']
+  tooltip: List of names of stages in pipeline. This should be set automatically.
+  heading: Extraction Parameters
+  flags: ["hidden"]
+  
+FILE_MAP:
+  default_value:
+    images: []
+    labels: []
+    annotations: []
+    ROIS: []
+    metadata: []
+  widget_type: dict
+  tooltip: Files to be parsed from each example's directory. type=dict[str, list[str]] though can be empty lists
+  heading: Extraction Parameters
+  flags: ["hidden"]
+INTENSITY_IMAGE_NAME:
+  default_value: null
+  widget_type: str
+  tooltip: Name of image used for intensity measurements. e.g. `mip_raw.tiff`
+  heading: Extraction Parameters
+OBJECTS_IMAGE_NAME:
+  default_value: null
+  widget_type: str
+  tooltip: Name of image used for object (label) extraction. e.g. `pred_Stardist.tiff`
+  heading: Extraction Parameters
+ROIS_NAME:
+  default_value: null
+  widget_type: str
+  tooltip: Name of file (image or geojson) for ROI extraction. e.g. `ROI_0.tiff`
+  heading: Extraction Parameters
+PX_SIZE_XY:
+  default_value: null
+  widget_type: float
+  tooltip: "Define size in micrometers (\u03BCm) for Y,X dimensions. Looks in each example's metadata for value if none. If not found or provided defaults to 1."
+  heading: Extraction Parameters
+PX_SIZE_Z:
+  default_value: null
+  widget_type: float
+  tooltip: "Define size in micrometers (\u03BCm) for Z dimension. Looks in each example's metadata for value if none. If not found or provided defaults to 1."
+  heading: Extraction Parameters
+GET_CHS:
+  default_value: null
+  widget_type: list
+  tooltip: Extract objects from these channels only. by default, all channels are used.
+  heading: Extraction Parameters
+  flags: ["hidden"]
+
+ALLOW_RAW_PREDS:
+  default_value: true
+  widget_type: bool
+  tooltip: If false, only use annotated predictions.
+  heading: Extraction Parameters
+  flags: ["hidden"]
+
+
+
+
+
+EXTRACT_GROUPS:
+  default_value: null
+  widget_type: extract_groups
+  tooltip: |
+    The EXTRACT_GROUPS field allows you to categorize data using any metadata-derived property of each example (e.g., the image path). 
+    It is used to assign group labels to each example by applying regex pattern matching to a specified attribute of the metadata.\n
+    For example, to categorize data belonging to one of either knockout or wildtype genotypes by looking for whether the string "KO" or "WT" is in the exmd's image_path:\n
+      EXTRACT_GROUPS:\n
+        - var:    genotype      # name of grouping variable\n
+          attrib: image_path    # name of exmd attribute\n
+          mapping:              # dict mapping regular expressions to names of categories within this var\n
+            "KO": "knockout"\n
+            "WT": "wildtype"\n
+  heading: Grouping Parameters
+
+ASSIGN_MD_ATTRS:
+  default_value: ['scene_name']
+  widget_type: multi-selection
+  value_options: ['scene_name']
+  tooltip: pull these keys from example metadata and write value to dataframes as grouping variable. e.g. ['scene_name']
+  heading: Grouping Parameters
+
+
+# these are just for a skeleton of args - e.g. these are example templates but are not set during initialization explicitly
+###########################################################################################
+STAGE_PARAMS:
+  default_value: null
+  widget_type: SegConfigModelsField
+  tooltip: "stage specific configuration attributes - see stage for specifics"
+  heading: Stages
+
+
+__version__:
+  default_value: 2.0.0
+  type: str
+  tooltip: schema version tracking
+  heading: General Project Settings
+  flags: ["hidden"]

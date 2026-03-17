@@ -1,0 +1,93 @@
+# ROI HANDLING PARAMETERS
+
+RPS_TO_GET:
+  default_value: ['label', 'area', 'bbox', 'centroid', 'intensity_mean', 'intensity_min', 'intensity_max',  'axis_major_length', 'axis_minor_length']
+  widget_type: multi-selection
+  tooltip: |
+    Properties to calculate for each object, can be anything accepted by skimage.measure.regionprops.
+    Note label must always be included. 
+  extra:
+    value_options: ['label', 'area', 'bbox', 'centroid', 'intensity_mean', 'intensity_min', 'intensity_max',  'axis_major_length', 'axis_minor_length', 'perimeter', 'num_pixels', 'intensity_std', 'solidity']
+
+ROI_ADDITIONAL_PROPS:
+  default_value: null
+  widget_type: multi-selection
+  tooltip: properties to calculate for each object, can be anything accepted by skimage.measure.regionprops.
+  flags: ["hidden"]
+  extra:
+    value_options: ['perimeter', 'num_pixels', 'intensity_std', 'solidity']
+
+ROI_EXTRA_PROPERTIES:
+  default_value: null
+  widget_type: multi-selection
+  tooltip: Extra properties to calculate for each object that are not directly available from skimage.measure.regionprops and instead use custom implementations.
+  extra:
+    value_options: ['uc.skewedness', 'uc.kurtosis', 'uc.circularity', 'uc.longest_skeleton_path']
+
+ROI_GET_OBJECT_COORDS:
+  default_value: False
+  widget_type: bool
+  tooltip: This param is not currently used, but can be enabled to get coordinates for each roi object.
+  flags: ["hidden"]
+
+ROI_OBJECTS_SIZE_RANGE:
+  default_value: [-1, -1]
+  widget_type: tuple
+  tooltip: Minimum and maximum allowed object size (in pixels). -1/None is used to indicate no limit. 
+
+REID_ROIS:
+  default_value: false
+  widget_type: bool
+  tooltip: |
+    Relabel every spatially disconnected region in ``label_image`` with a unique sequential ID, preserving background as 0.
+
+REMAP_ROIS:
+  default_value: null
+  widget_type: dict
+  tooltip: "Remap ROI values \u2014 use key:value mapping or leave null."
+  flags: ["hidden"]
+
+ROI_ASSIGNMENT_METHODS:
+  default_value: Coords
+  widget_type: selection
+  tooltip: "Method(s) for assigning objects to ROIs \u2014 'Coords' and/or 'Distance'."
+  extra:
+    value_options: ['Centroid', 'Coords', 'Masking', 'Distance', 'Overlap3D', 'Distance3D']
+
+DISTANCE_THRESHOLD:
+  default_value: null
+  widget_type: float
+  tooltip: Threshold in micrometers when using distance-based assignment.
+
+ALLOW_ROI_IMG_SHAPE_MISMATCH:
+  default_value: True
+  widget_type: bool
+  tooltip: if True and roi and image shape are not identical. attempts conversion to shape of object defined in HANDLE_SHAPE_MISMATCH_KEY whether to raise error if roi format != img format.
+
+HANDLE_SHAPE_MISMATCH_KEY:
+  default_value: img
+  widget_type: selection
+  tooltip: transform format to this object, must be either ["img" or "roi"].
+  extra:
+    value_options: ['img', 'roi']
+
+
+
+# not implemented 
+####################
+CONDENSE_ROI_IDS:
+  default_value: False
+  widget_type: bool
+  tooltip: if True, treat each unique ROI pixel value as belonging to the same ROI. If False, each unique pixel value is treated as a unique ROI (assigned a unique roi_i). 
+
+DROP_DUPLICATE_DETECTIONS_IN_OVERLAPPING_ROIS:
+  default_value: false
+  widget_type: bool
+  tooltip: Remove duplicate labels in overlapping ROIs.
+  flags: ["hidden"]
+
+ROI_REMOVE_SMALL_OBJ_SIZE:
+  default_value: null
+  widget_type: int
+  tooltip: DEPRECATED - Use ROI_OBJECTS_SIZE_RANGE instead. Remove ROI objects smaller than this area, -1 means no limit.
+  flags: ["hidden"]

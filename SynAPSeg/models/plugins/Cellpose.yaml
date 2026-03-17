@@ -1,0 +1,43 @@
+model_path:
+  default_value: ""
+  widget_type: path
+  tooltip: Path to directory containing the trained model
+  flags: ["required"]
+  extra:
+    path_type: directory
+  
+load_model_kwargs:
+  gpu:
+    default_value: True
+    widget_type: bool
+    tooltip: Use gpu (if available)
+    group: load_model_kwargs
+  
+preprocessing_kwargs:
+  dtype: 
+    default_value: 'float32'
+    widget_type: str
+    tooltip: Output of preprocessing will be converted to this dtype
+    group: preprocessing_kwargs
+  norm:
+    default_value: [1, 99.8]
+    widget_type: tuple
+    tooltip: Normalization percentile range
+    group: preprocessing_kwargs
+
+predict_kwargs:
+  do_3D: 
+    default_value: False
+    widget_type: bool
+    tooltip: set to True to run 3D segmentation on 3D/4D image input. Defaults to False.
+    group: predict_kwargs
+  flow_threshold: 
+    default_value: null
+    widget_type: float
+    tooltip: Flow threshold for prediction
+    group: predict_kwargs
+  cellprob_threshold: 
+    default_value: null
+    widget_type: float
+    tooltip: Cell probability threshold for prediction
+    group: predict_kwargs

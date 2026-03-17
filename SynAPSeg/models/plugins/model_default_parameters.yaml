@@ -1,0 +1,218 @@
+########################################################################################################################################
+# this template contains all general model parameters - each model must define any unique parameters using same schema in a .yaml file
+  # parameters listed here do not need to be included unless the default value is overridden
+  # each model should leave up to first 'default_value' key the same
+  # each model.py plugin must have attribute 
+    # __parameters__ = 'path_to_params.yml'
+  # see UI.widgets.config_widget.field_widget for widget types
+# note: 
+  # params don't need to include 'heading' arg as this will be set to 'Model' automatically 
+
+# example: if my model takes a unique param called 'backbone' with a number of options it would look like this:
+  # MODEL_PARAMS:
+    # widget_type: SegConfigModelsField
+    # tooltip: "model specific configuration attributes - see model for specifics"
+    # heading: Model
+    # default_value:
+    #   backbone:
+    #     default_value: 'densenet201'
+    #     widget_type: selection
+    #     tooltip: "model backbone - must be same as used for training "
+    #     group: 
+########################################################################################################################################
+
+# MODEL_PARAMS:
+#   widget_type: SegConfigModelsField
+#   tooltip: "model specific configuration attributes - see model for specifics"
+#   heading: Model
+#   default_value:
+
+
+
+model_path:
+  default_value: ""
+  widget_type: path
+  tooltip: Path directory or file of the trained model (depending on model some take folder or specific file to load)
+
+model_input:
+  default_value: null
+  widget_type: str
+  tooltip: |
+    name of another model in the pipeline which provides input to this model 
+      if None assumes "raw" image is input 
+
+
+in_dims_pipe: 
+  default_value: "STCZYX"
+  widget_type: str
+  tooltip: Dimensions of the image entering the pipeline, internally always standardized to STCZYX, extra singleton dims will added automatically 
+  flags: ["hidden"]
+
+in_dims_model:
+  default_value: null
+  widget_type: str
+  tooltip: Expected input dimension format for model.predict (e.g., for a 2d model 'YX' or a 3d model 'ZYX')
+  # flags: ["hidden"]
+  
+out_dims_model:
+  default_value: null
+  widget_type: str
+  tooltip: |
+    Dimensions of the model's output.  This can be automatically inferred from out_dims_pipe in most cases.
+    The one exception is if the model's output CREATES dimensions, then this must be specifed.
+  flags: ["hidden"]
+
+out_dims_pipe:
+  default_value: "STCZYX"
+  widget_type: str
+  tooltip: | 
+    Allows for control of how the input in fed into the model.
+    Output dimension format after iterating over non-reduced dimensions.
+    Dimensions specified here, that are not part of in_dims_model, will be iterated over.
+    Unspecified dimensions will be flattened by projection automatically.
+    Note: singleton dims are preseved to maintain constistent format.
+                        
+    Example: 
+        Note: for simplicity this example uses 'ZYX' as in_dims_pipe, 
+        but in truth will always be STCZYX when used in a pipeline, and thus 'STCZYX' 
+        and 'STCYX' should be used for out_dims_pipe in examples 1 and 2 respectively.
+
+        Given a 3d volume as input (in_dims_pipe='ZYX')
+        applying a 2d model (in_dims_model=YX)
+        which generates a 2d output (out_dims_model=YX)
+        1) To run the prediction on the z-projection of the image,
+            out_dims_pipe = 'YX'
+        2) While if you wanted to apply the same model slice-by-slice over the volume,
+            out_dims_pipe = 'ZYX'
+
+dimension_handling:
+  default_value: {}
+  widget_type: dict
+  tooltip: apply reductions in order specified by dimension_handling, when provided 
+  flags: ["hidden"]
+
+expand_result:
+  default_value: true
+  widget_type: bool
+  tooltip: controls whether dimensions of result returned by self.run should be filled with singleton dimensions that were reduced during prediction
+
+debug:
+  default_value: false
+  widget_type: bool
+  tooltip: Print debug information during model run
+
+default_reduce_fxn:
+  default_value: null
+  widget_type: str
+  tooltip: |
+    function to apply dimensionality reduction on a single axis 
+        if None uses maximum intensity projection
+      any dimensions not iterated over and not supported by the model's input dims will be reduced with this 
+        function prior to being fed into model
+      custom functions are supported 
+        must accept kwarg: axis=int. 
+        can provide string represenation of module path to the function (module must be in models namespace)
+
+
+
+# preprocessing_kwargs: Optional[dict] = None,
+# load_model_kwargs: Optional[dict] = None,
+# predict_kwargs: Optional[dict] = None,
+# postprocessing_kwargs: Optional[dict] = None,
+# train_kwargs: Optional[dict] = None,
+
+# belongs to preprocessing_kwargs
+###################################
+preprocessing_kwargs:
+  axes:
+    default_value: "STC"
+    widget_type: str
+    tooltip: Axes to apply pre-processing function over. if None will be inferred via --> [d for d in self.out_dims_pipe if d not in self.in_dims_model]
+    group: preprocessing_kwargs
+
+  dtype:
+    default_value: "float32"
+    widget_type: str
+    tooltip: Output of preprocessing will be converted to this dtype
+    group: preprocessing_kwargs
+
+  norm:
+    default_value: [1, 99.8]
+    widget_type: tuple
+    tooltip: |
+      Normalization percentile range for the input to the preprocessing function. 
+        (1, 99.99) is a good default if input is 3d, but if image is 2d or max projected over the z-axis, use 99.9 or 99.8 depending on the image.
+      Note: 
+        input here refers to input to preprocessing, not the predict function.
+      Example:
+        Given an 3d input, preprocessing axes will be applied on ZYX chunks, by default (iterating over axes STC; the non-spatial dimensions),
+        even if the input to the model is 2d (e.g. out_dims_pipe='STCYX'). 
+        The mip is generated therfore from the normalized volume, after preprocessing. 
+        So, for 3d input use (1,99.99) and for 2d input use (1,99.9).
+    group: preprocessing_kwargs
+
+  clip:
+    default_value: True
+    widget_type: bool
+    tooltip: clip values to range (0, 1)
+    group: preprocessing_kwargs
+
+# belongs to load_model_kwargs
+###################################
+
+
+# belongs to predict_kwargs
+###################################
+# predict_kwargs:
+#   n_tiles:
+#     default_value: null
+#     widget_type: list
+#     tooltip: Number of tiles for prediction (if supported by the model)
+#     group: predict_kwargs
+
+# belongs to postprocessing_kwargs
+###################################
+postprocessing_kwargs:
+  axes:
+    default_value: null
+    widget_type: str
+    tooltip: Axes to apply post-processing function over. if None will be inferred via --> [d for d in self.in_dims_pipe if d not in self.out_dims_model]
+    group: postprocessing_kwargs
+
+# belongs to train_kwargs
+###################################
+
+
+
+# these can be automatically inferred 
+###################################
+plugin_class:                                   # this will replace model_class
+  default_value: null
+  widget_type: str
+  tooltip: optional - typically infered by model alias, unless multiple of same type used then name of model discoverable by model factory
+  heading: Model
+  flags: ["hidden"]
+model_class:
+  default_value: null
+  widget_type: str
+  tooltip: optional - typically infered by model alias, unless multiple of same type used then name of model discoverable by model factory
+  heading: Model
+  flags: ["hidden"]
+name:
+  default_value: null
+  widget_type: str
+  tooltip: "model object alias, optional. defaults to self."
+  heading: Model
+  flags: ["hidden"]
+output_dirname:
+  default_value: null
+  widget_type: str
+  tooltip: "Name of the output directory."
+  heading: Model
+  flags: ["hidden"]
+output_dir:
+  default_value: null
+  widget_type: str
+  tooltip: "Path to the output directory."
+  heading: Model
+  flags: ["hidden"]
