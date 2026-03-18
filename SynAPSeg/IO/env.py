@@ -74,7 +74,7 @@ def verify_and_set_env_dirs(env_var_map=None, override=True, fail_on_error=True)
                 continue
 
         os.environ[var] = resolved_path
-        msg += f"\t\'{var}\': \'{resolved_path},\'\n"
+        msg += f"\t\'{var}\': \'{resolved_path}\',\n"
 
     for k,v in constants.NONPATH_ENV_VARS.items():
         os.environ[k] = v
