@@ -9,6 +9,7 @@ import os
 import sys
 from typing import Any, Dict, Optional, Tuple, List
 
+from SynAPSeg.utils import utils_general as ug
 from SynAPSeg.utils import utils_image_processing as uip
 from SynAPSeg.utils import utils_czi as uCzi
 from SynAPSeg.IO.metadata_handler import MetadataParser, process_channel_info
@@ -275,65 +276,6 @@ class ImageParser(ABC):
                 return parser_cls(file_path, params, load_kwargs=load_kwargs)
 
         raise ValueError (f"no suitable parser could be created based on image path: {file_path}")
-            
-def _has_bioformats() -> bool:
-    """determine if bioformats_jar is installed"""
-    try:
-        import bioformats_jar
-        return True
-    except ImportError:
-        return False
-        
-def _determine_general_parser() -> type[ImageParser]:
-    """determine which general parser to use based on bioformats_jar availability"""
-    if _has_bioformats():
-        return AICSImageParser
-    return GeneralImageParser
-
-
-class CZIImageParser(ImageParser):
-    """
-    Parser for handling .czi images.
-    """
-    # TODO: convert implementation to use the parser based on the official czi lib I implemented in IO.readers
-
-    def load_image(self, load_kwargs: Optional[dict]=None):
-        """ load czi object and extract image array"""
-        from _aicspylibczi import PylibCZI_CDimCoordinatesOverspecifiedException
-        
-        try:
-            czi, scene_ids = uCzi.read_czi(self.file_path)
-            scene_id = self.load_kwargs.get('scene_id', 0)
-            arr = uCzi.czi_scene_to_array(czi, scene_id, None, None, None, ch_last=False, rotation=None, bgr2rgb=False, moveax=None)
-        
-        except PylibCZI_CDimCoordinatesOverspecifiedException:
-            print('caught exception for czi multifile scenes')
-            czi, arr, dims = uCzi.read_czi_multifilescenes_mosiac(self.file_path, get_dims = 'STCZYX')
-
-        
-        return czi, arr
-        
-        
-    def extract_metadata(self, czi):
-        metadata = {}
-        for n, f in {
-            'ch_wavelengths': uCzi.get_czi_ch_wavelengths,
-            'zooms': uCzi.get_czi_zooms,
-            'mag': uCzi.get_czi_mag,
-            'scaling' : uCzi.get_czi_scaling,
-            'shape': lambda x: x.shape,
-        }.items():
-            try:
-                res = f(czi)
-                metadata[n] = str(res) #if not isinstance(res, dict) else res # convert to str unless its a dictionary
-            except:
-                metadata[n] = None
-        return metadata
-
-    def format_prediction_input(self, img_obj, arr, ex_md, RUN_CONFIG):
-        arr = uCzi.czi_arrange_channels(img_obj, arr, channel_axis=ex_md['current_format'].index('C'))
-        arr = self.maybe_input_arr_format_func(arr, ex_md)
-        return arr
 
 
 class IMSImageParser(ImageParser):
@@ -384,23 +326,103 @@ class GeneralImageParser(ImageParser):
         return self.maybe_input_arr_format_func(arr, ex_md)
 
 
+
+
+def _has_bioformats() -> bool:
+    """determine if bioformats_jar is installed"""
+    try:
+        import bioformats_jar
+        return True
+    except ImportError:
+        return False
+        
+def _determine_general_parser() -> type[ImageParser]:
+    """determine which general parser to use based on bioformats_jar availability"""
+    if _has_bioformats():
+        return AICSImageParser
+    return GeneralImageParser
+
+def get_aics_reader():
+    """ determine reader for aics loader """
+    if _has_bioformats():
+        from aicsimageio.readers import BioformatsReader
+        return BioformatsReader
+    return None
+    
+
+
+
+class CZIImageParser(ImageParser):
+    """
+    Parser for handling .czi images.
+    """
+    # TODO: convert implementation to use the parser based on the official czi lib I implemented in IO.readers
+    
+    def read_file(self, load_kwargs: Optional[dict]=None):
+        """ 
+        Returns an AICSImage object, potentially using the BioformatsReader. 
+            Note may fail if reading image where scenes are saved across multiple files during acquisition 
+            Therefore load_image is prefered
+        """ 
+        from aicsimageio import AICSImage
+        
+        self.load_kwargs.update(load_kwargs or {})
+        
+        czi, scene_ids = uCzi.read_czi(self.file_path)
+        
+        return czi
+    
+
+    def load_image(self, load_kwargs: Optional[dict]=None):
+        """ load czi object and extract image array"""
+        from _aicspylibczi import PylibCZI_CDimCoordinatesOverspecifiedException
+        
+        try:
+            czi, scene_ids = uCzi.read_czi(self.file_path)
+            scene_id = self.load_kwargs.get('scene_id', 0)
+            arr = uCzi.czi_scene_to_array(czi, scene_id, None, None, None, ch_last=False, rotation=None, bgr2rgb=False, moveax=None)
+        
+        except PylibCZI_CDimCoordinatesOverspecifiedException:
+            print('caught exception for czi multifile scenes')
+            czi, arr, dims = uCzi.read_czi_multifilescenes_mosiac(self.file_path, get_dims = 'STCZYX')
+
+        
+        return czi, arr
+        
+        
+    def extract_metadata(self, czi):
+        metadata = {}
+        for n, f in {
+            'ch_wavelengths': uCzi.get_czi_ch_wavelengths,
+            'zooms': uCzi.get_czi_zooms,
+            'mag': uCzi.get_czi_mag,
+            'scaling' : uCzi.get_czi_scaling,
+            'shape': lambda x: x.shape,
+        }.items():
+            try:
+                res = f(czi)
+                metadata[n] = str(res) #if not isinstance(res, dict) else res # convert to str unless its a dictionary
+            except:
+                metadata[n] = None
+        return metadata
+
+    def format_prediction_input(self, img_obj, arr, ex_md, RUN_CONFIG):
+        arr = uCzi.czi_arrange_channels(img_obj, arr, channel_axis=ex_md['current_format'].index('C'))
+        arr = self.maybe_input_arr_format_func(arr, ex_md)
+        return arr
+
+
 class AICSImageParser(ImageParser):
     """
     Optional Parser for handling images using bioformats (if bioformats_jar is installed) 
-    """
-    def determine_reader(self):
-        if _has_bioformats():
-            from aicsimageio.readers import BioformatsReader
-            return BioformatsReader
-        return None
-    
+    """    
     def read_file(self, load_kwargs: Optional[dict]=None):
         """ Returns an AICSImage object, potentially using the BioformatsReader """ 
         from aicsimageio import AICSImage
         
         self.load_kwargs.update(load_kwargs or {})
         
-        img_obj = AICSImage(self.file_path, reader=self.determine_reader())
+        img_obj = AICSImage(self.file_path, reader=get_aics_reader())
         
         return img_obj
     
@@ -430,26 +452,24 @@ class AICSImageParser(ImageParser):
     
 
     def extract_metadata(self, img_obj):
-        md = img_obj.metadata
-        # TODO handle parsing of metadata same as czi parser
-        # info likely in md.images[i].pixels.physical_size_x, physical_size_y, physical_size_z
-        # see also str(img_obj.metadata.images[0].pixels.physical_size_x_quantity.u) -> e.g. 'micrometer'
-        # also see md.images[i].pixels.channel_names
-        # see also img_obj.dims -> <Dimensions [T: 1, C: 3, Z: 1, Y: 10795, X: 12599]>
         
-
+        # md = img_obj.metadata
+        
         metadata = {}
         for n, f in {
-            # 'ch_wavelengths': uCzi.get_czi_ch_wavelengths,
-            # 'zooms': uCzi.get_czi_zooms,
-            # 'mag': uCzi.get_czi_mag,
+            'ch_wavelengths': self.get_channel_wavelengths,
             'scaling' : self.get_scaling,
+            'zooms': self.get_zooms,
+            'mag': self.get_mag,
             'shape': self.get_shape,
             'format': self.get_format,
+            # 'channels': self.get_channels,
         }.items():
             try:
                 res = f(img_obj)
-                metadata[n] = str(res) #if not isinstance(res, dict) else res # convert to str unless its a dictionary
+                if isinstance(res, tuple): # tuple's need yaml handling, so avoid
+                    res = list(res)
+                metadata[n] = res #if not isinstance(res, dict) else res # convert to str unless its a dictionary
             except:
                 metadata[n] = None
         return metadata
@@ -461,6 +481,7 @@ class AICSImageParser(ImageParser):
         
         _from = img_obj.metadata.images[scene_index].pixels
         for k, attr in {dim: f'physical_size_{dim}' for dim in 'xyz'}.items():
+            k = k.upper()
             try:
                 unit_key = f"{attr}_unit"
                 unit = getattr(_from, unit_key).value  # -> 'µm'
@@ -479,21 +500,88 @@ class AICSImageParser(ImageParser):
         scene_index = img_obj.current_scene_index
         return img_obj.metadata.images[scene_index].pixels.channels
     
-    def get_channel_wavelengths(self, img_obj):
-        """ uses excitation wavelength """
-        chs = self.get_channels(img_obj)
-        ch_info = {}                        # -> {653.0: 0, 587.0: 1, 488.0: 2, 384.0: 3}
-        for c_i, ch in enumerate(chs):
-            wl = ch.excitation_wavelength
-            name = ch.name                  # -> 'AF647-T1'
-            ch_info[wl] = c_i
-        wl_ordered = sorted(ch_info.items()) # -> [(384.0, 3), (488.0, 2), (587.0, 1), (653.0, 0)]
-        reordered_channel_inds = [tup[1] for tup in wl_ordered] # -> [3, 2, 1, 0]
+    def get_mag(self, img_obj):
+        return img_obj.metadata.instruments[0].objectives[0].nominal_magnification
+    
+    def get_zooms(self, img_obj):
+        return [detec.zoom for detec in img_obj.metadata.instruments[0].detectors]
+    
+    # def get_formated_channels_md(self, img_obj):
+    #     # seems to be nested types in (pxmd.channels[0]).__dict__
+    #     # need to consider how to handle 
+    
+    def get_channel_wavelengths(self, img_obj, common_wavelengths: Optional[list[int]]=None) -> dict:
+        """ 
+        get mapping of channel names to common excitation wavelengths 
         
-        # can now use this to reorder the channels in wavelength order 
+        args:
+            common_wavelengths: if not provided defaults to [405, 488, 561, 639]    
+        
+        """
+        common_wavelengths = common_wavelengths or [405, 488, 561, 639]
+        wl_set = set(common_wavelengths)
+        n_exhausted = 0 # for keeping track of channels if more provided than common wavelengths
+        
+        chs = self.get_channels(img_obj)
+        ch_info = {}                        # -> {'EGFP-T1': 488.0, 'EBFP2-T2': 384.0, 'mCher-T2': 587.0}
+        for c_i, ch in enumerate(chs):
+            wl = ch.excitation_wavelength   # -> 384.0
+            
+            # find closest common wavelength 
+            if len(wl_set) == 0:
+                print('common wavelenths exhausted, appending to end')
+                closest_match = max(common_wavelengths) + 1 + n_exhausted
+                n_exhausted +=1
+            else:
+                closest_match, matched_wl, unmatched = ug.find_closest_and_remove([wl], wl_set)  # -> [405], [384.0], []
+                if len(closest_match)!= 1:
+                    raise ValueError(closest_match) # this shouldn't occur
+                closest_match = closest_match[0]
+            
+            name = ch.name                  # -> 'EBFP2-T2'
+            ch_info[name] = closest_match
+                
+        return ch_info
+    
+    def get_channels_inds_in_wl_order(self, img_obj) -> list[int]:
+        """ returns indicies of channels in wavelength order """ 
+        ch_names = img_obj.channel_names                                                        # -> ['EGFP-T1', 'EBFP2-T2', 'mCher-T2']
+        ch_ordered = sorted(self.get_channel_wavelengths(img_obj).items(), key=lambda x: x[1])  # -> [('EBFP2-T2', 384.0), ('EGFP-T1', 488.0), ('mCher-T2', 587.0)]
+        ch_inds = [ch_names.index(tup[0]) for tup in ch_ordered]                                # -> [1, 0, 2]
+        return ch_inds
+    
+    def arrange_channels(self, img_obj, arr, channel_axis):
+        """Reformat channels to be in order of wavelength (e.g., 405, 488, 594, 647).
+
+        Parameters:
+        img_obj : file object
+            containing metadata and channel information.
+        arr : ndarray
+            Multi-channel image data array
+        channel_axis : int, optional
+            Axis index of the channels in the array (default is -1, last axis).
+
+        Returns:
+        sorted_arr : ndarray
+            Image data with channels rearranged according to their wavelengths.
+        """
+        
+        # Get indices of channels in the order they should be sorted
+        reordered_channel_inds = self.get_channels_inds_in_wl_order(img_obj) # -> [1, 0, 2]
+        
+        # can now use np.take to reorder the channels in wavelength order 
+        sorted_arr = np.take(arr, reordered_channel_inds, axis=channel_axis)
+        
+        return sorted_arr
+
             
     def format_prediction_input(self, img_obj, arr, ex_md, RUN_CONFIG):
-        return self.maybe_input_arr_format_func(arr, ex_md)
+        arr = self.arrange_channels(img_obj, arr, channel_axis=ex_md['current_format'].index('C'))
+        arr = self.maybe_input_arr_format_func(arr, ex_md)
+        return arr
+    
+
+
 
 
 # TODO: not invoked, does this need to be used anywhere?
@@ -546,3 +634,47 @@ class ImageConfigInterpreter:
                 ex_md['annotation_metadata'] = _ex_md['annotation_metadata']
 
         return ex_md
+
+
+
+# def test():
+if __name__ == '__main__' and bool(0):
+    from SynAPSeg.utils import utils_plotting as up
+    from SynAPSeg.utils import utils_general as ug
+            #     'ch_wavelengths': uCzi.get_czi_ch_wavelengths,
+            # 'zooms': uCzi.get_czi_zooms,
+            # 'mag': uCzi.get_czi_mag,
+
+    fp = r"D:\BygraveLab\Confocal data archive\Pascal\VHL_VglutHomer\2024_0328_VHL1_mark--VHL1-1.1--.czi"
+
+    czi_parser = CZIImageParser(fp)
+    czi_obj = czi_parser.read_file()
+    czi_parser.extract_metadata(czi_obj)
+
+    parser = AICSImageParser(fp)
+    img_obj, image_data = parser.load_image()
+    print(image_data.shape)
+    ex_md = parser.extract_metadata(img_obj)
+    print(ex_md)
+    parser.get_channels(img_obj)
+    
+    imgmd = img_obj.metadata.images[img_obj.current_scene_index]
+    pxmd = imgmd.pixels
+    
+    from ome_types._autogenerated.ome_2016_06.pixels import Pixels
+
+    
+    
+    common_wavelengths = [405, 488, 561, 639]
+    present_wls = list(parser.get_channel_wavelengths(img_obj).values())
+    missing_wls = set(common_wavelengths).difference(present_wls)
+    missing_inds = [common_wavelengths.index(wl) for wl in missing_wls]
+
+
+    up.show_ch(image_data[0], axis=0)
+
+    arr = parser.arrange_channels(img_obj, image_data, channel_axis=ex_md['format'].index('C'))
+    up.show_ch(arr[0], axis=0)
+    
+    
+    
