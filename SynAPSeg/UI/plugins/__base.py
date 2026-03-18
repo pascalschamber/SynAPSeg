@@ -11,6 +11,8 @@ import sys
 import os
 import yaml
 from typing import Dict
+import rich
+
 from SynAPSeg.UI.widgets.config_widget import ParamConfigWidget
 from SynAPSeg.UI.widgets.dialogs import warning_dialog
 from SynAPSeg.config.param_engine.interpreter import SchemaInterpreter
@@ -38,19 +40,6 @@ class BaseApp(QWidget):
         self.PLUGIN_PARAM_MAP = {}
 
         
-        
-
-    def run(self):
-        """ calls child's _run() method"""
-        print(f"Starting {self.app_name}...")
-        self._run()
-        print(f"{self.app_name} completed.")
-    
-    @abstractmethod
-    def _run(self):
-        """Each sub-app must implement this method to define its own behavior."""
-        pass
-    
     def init_layout(self):
         """ base class defined layout before child class implements custom layout """
         pass
@@ -58,12 +47,53 @@ class BaseApp(QWidget):
     def post_layout(self):
         """ base class defined layout after child class implements custom layout """
 
-        
-        
         # Button to run app
         self.run_button = QPushButton(f"Run {self.app_name}")
         self.run_button.clicked.connect(self.run)
         self.layout.addWidget(self.run_button)
+        
+    def on_switch_app(self):
+        """ configure ui updates when app is switched to """
+        print(f"on_switch_app: {self.app_name}")
+        self._on_switch_app()
+    
+    
+    def on_select_project(self):
+        """ configure ui updates when a project is selected """
+        print("selected_project: ", self.state_manager.get("selected_project"))
+        self._on_select_project()
+        
+    def on_create_project(self):
+        self._on_create_project()
+    
+        
+    @abstractmethod
+    def _on_switch_app(self):
+        pass
+    
+    # @abstractmethod
+    def _on_select_project(self):
+        print(f"_on_select_project action undefined, passing..")
+    
+    # @abstractmethod
+    def _on_create_project(self):
+        print(f"_on_create_project action undefined, passing..")
+            
+
+    def run(self):
+        """ calls child's _run() method"""
+        
+        print(f"Starting {self.app_name}...")
+        
+        self._run()
+        
+        print(f"{self.app_name} completed.")
+    
+    @abstractmethod
+    def _run(self):
+        """Each sub-app must implement this method to define its own behavior."""
+        pass
+    
 
                 
     def update_from_state(self):
@@ -81,6 +111,7 @@ class BaseApp(QWidget):
                 
     def get_examples_directory(self):
         """ returns path to project's examples data folder from state_manager, or raises warning dialog if invalid """
+        
         project_root = self.state_manager.get("project_root_directory", None)
         project_name = self.state_manager.get("selected_project", None)
 
@@ -104,24 +135,6 @@ class BaseApp(QWidget):
         return path_to_examples
         
     
-    def on_switch_app(self):
-        """ configure any ui updates when app is switched """
-        print(f"on_switch_app: {self.app_name}")
-        self._on_switch_app()
-    
-    @abstractmethod
-    def _on_switch_app(self):
-        pass
-    
-    def on_select_project(self):
-        """ configure ui updates when a project is selected """
-        print("selected_project: ", self.state_manager.get("selected_project"))
-        self._on_select_project()
-        
-    # @abstractmethod
-    def _on_select_project(self):
-        pass
-
     def get_config_interpreter(self, raw=False):
         if not self.default_config_path:
             print('no default config path')
@@ -185,31 +198,28 @@ class BaseApp(QWidget):
     
     def config_is_changed(self):
         self._has_built_config = False
-        print('MainApp received signal config_is_changed')
-
-
+        
     # --- config widget -> interp ---
-    def config_is_built(self): # --- interp <= config_widget ---
+    def config_is_built(self): 
         self._has_built_config = True
-        print('MainApp received signal config_is_built. updating config interpreter values..')
         self.update_interp()
         
 
     def update_interp(self):
-        """ update interp with widget config spec 
-                invoked when config is built 
+        """ 
+        update interp with widget config spec 
+            invoked when config is built 
         """
+        # debugstr = '\n\nupdating interpreter from config widget values:\n'
+        # print(debugstr)
+        
         # updates specs simulataneously with merged values
-        current_widget_config = self.get_config_widget_params()
+        # current_widget_config = self.get_config_widget_params()
         
-        debugstr = '\n\n in update_interp current_widget_config:\n'
+        self.interp.update_schema(self.get_config_widget_params(), flatten_input=False, clear_old=True)
+                
+        rich.print('\n\nupdating interpreter from config widget values:\n', self.interp.to_run_config())
         
-        for k,v in current_widget_config.items():
-            debugstr += f"{k}: SPEC(current_value={v['current_value']}, ...)\n"
-        print(debugstr)
-
-        self.interp.update_schema(current_widget_config, flatten_input=False, clear_old=True)
-    
     def get_config_widget_params(self):
         """ fetch config values from config_widget """
         return self.config_widget.get_config()

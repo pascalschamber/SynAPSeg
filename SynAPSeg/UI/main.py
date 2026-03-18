@@ -22,6 +22,7 @@ from SynAPSeg.IO.BaseConfig import read_config, write_config
 from SynAPSeg.IO.env import verify_and_set_env_dirs
 from SynAPSeg.UI.registry import get_plugins, UI_DIRNAME
 from SynAPSeg.UI.widgets import mainMenu
+from SynAPSeg.UI.widgets.download import DownloadWindow
 from SynAPSeg.UI.widgets.toolbars import ToolBar, StatusBar
 from SynAPSeg.UI.widgets.debugging import create_debug_console
 from SynAPSeg.UI.widgets.projectManager import ProjectManager, ProjectSelectionDialog
@@ -43,6 +44,7 @@ class StateManager(QObject):
     
     def __init__(self):
         super().__init__()
+        self.temp_attrs = ['current_status']
         self.settings = self.load_settings()
             
     def __str__(self):
@@ -64,6 +66,13 @@ class StateManager(QObject):
             self.settings[k] = v
         self.save_settings()
         self.settings_changed.emit()
+    
+    
+    def set_temp_value(self, key, value):
+        """ add var that does not persist between sessions """
+        self.temp_attrs.append(key)
+        self.settings[key] = value
+        
 
     def load_settings(self):
         if not Path(SETTINGS_FILE).exists(): 
@@ -92,8 +101,11 @@ class StateManager(QObject):
 
     def save_settings(self):
         _settings = read_config(SETTINGS_FILE)
-        _settings['UI'] = self.settings
+        _settings['UI'] = self.filter_persistant_settings()
         write_config(_settings, SETTINGS_FILE)
+    
+    def filter_persistant_settings(self):
+        return {k:v for k,v in self.settings.items() if k not in self.temp_attrs}
 
     def display_state(self):
         """ print current state to console """
@@ -113,6 +125,8 @@ class MainWindow(QMainWindow):
 
         # Initialize State Manager and project Managers
         self.state_manager = StateManager()
+        self.state_manager.set_temp_value('debug_mode', self.debug_mode)
+        
         self.project_manager = ProjectManager(self.state_manager)
                 
         # emit only after full init
@@ -146,9 +160,10 @@ class MainWindow(QMainWindow):
 
             # debug console
             self.console, self.console_window = self.build_console_window()
+        
 
         # update state
-        self.update_ui_from_state()
+        self.state_manager.set("current_status", "Setup complete.")
         
 
     def build_menu(self):
@@ -157,7 +172,7 @@ class MainWindow(QMainWindow):
         self.project_selector = ProjectSelectionDialog(self.state_manager)
         self.project_selector.project_root_changed.connect(self.update_available_projects)
         self.project_selector.project_updated.connect(self.update_selected_project)
-        self.project_selector.project_created.connect(self.project_selector.update_project_dropdown)
+        self.project_selector.project_created.connect(self.update_project_created)
 
         # create menu bar 
         menu_bar = mainMenu.MenuBar(callbacks={
@@ -167,6 +182,11 @@ class MainWindow(QMainWindow):
             'about':            lambda: mainMenu.show_about_dialog(self),
             'overview':         lambda: mainMenu.show_overview(self),
             'documentation':    lambda: mainMenu.open_documentation(self),
+            'download_models':  lambda: DownloadWindow(
+                                        parent = self, 
+                                        url = "https://zenodo.org/records/18988899/files/Models.zip?download=1",
+                                        save_path = os.path.join(Path(constants.USER.MODELS_BASE_DIR).parent, "Models.zip")
+            ),
             'reset':            lambda: handle_app_reset(self),
         })
         self.setMenuBar(menu_bar)
@@ -174,7 +194,7 @@ class MainWindow(QMainWindow):
 
     def build_toolbar(self):
         """Instantiate menu bar"""
-        # Instantiate tool bar
+
         tool_bar = ToolBar(callbacks=[
             {"label": "select project", "fxn": lambda: print('select project clicked')},
             {"label": "apply params", "fxn": lambda: print('apply params clicked')},
@@ -183,8 +203,8 @@ class MainWindow(QMainWindow):
         return tool_bar
     
     def build_statusbar(self):
-        """Instantiate menu bar"""
-        # Instantiate status bar
+        """Instantiate status bar"""
+
         status_bar = StatusBar(self)
         self.setStatusBar(status_bar)
         status_bar.set_status("Application started.")
@@ -209,7 +229,7 @@ class MainWindow(QMainWindow):
         self.app_tray = QTabWidget()
         self.app_tray.setObjectName("AppTray")
         self.app_tray.setStyleSheet(style_sheets.app_tray_tabs)
-        self.app_tray.currentChanged.connect(self.switch_app)
+        
         
         # Load sub-apps
         self.apps = {}
@@ -219,6 +239,7 @@ class MainWindow(QMainWindow):
         self.layout.addWidget(self.app_tray)
         
         # Show first app by default
+        self.app_tray.currentChanged.connect(self.switch_app)
         self.app_tray.setCurrentIndex(0)
         return self.app_tray, self.apps
 
@@ -279,11 +300,16 @@ class MainWindow(QMainWindow):
     
     def update_available_projects(self):
         """ updates project selection drop down with project directories found in project_root_dir """
+        print('signal project_root_changed emitted')
         self.state_manager.set('available_projects', self.project_manager.get_available_projects())
         
     def update_selected_project(self):
         """ Updates current app on project selection dialog completion """
         self.app_tray.currentWidget().on_select_project()
+    
+    def update_project_created(self):
+        """ Updates current app on project creation dialog completion """
+        self.app_tray.currentWidget().on_create_project()
             
     def get_selected_project(self):
         return self.state_manager.get('selected_project', "")
@@ -293,8 +319,10 @@ class MainWindow(QMainWindow):
 
         # update selected project
         selected_project = self.state_manager.get("selected_project", "Select a project")
+        current_status_message = self.state_manager.get("current_status", "")
         
         if hasattr(self, 'status_bar'):
+            self.status_bar.set_status(current_status_message)
             self.status_bar.update_current_project(selected_project)
         
         

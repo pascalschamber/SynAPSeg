@@ -102,9 +102,11 @@ class MainApp(BaseApp):
             outdir_path=None
         )
 
+
     def get_config_key(self):
         """ get the config key from the config key widget """
         return self.config_key_widget.text()
+
 
     def get_config_keys(self):
         """ get the list of config keys from the config file """
@@ -112,6 +114,7 @@ class MainApp(BaseApp):
             return list(read_config(self.CONFIG_PATH).keys())
         except:
             return []
+    
     
     def load_config_from_key(self):
         """ load config from config file using the config key """
@@ -139,17 +142,16 @@ class MainApp(BaseApp):
         self.config_widget.update_widget_layout(self.interp.get_ui_specs(unflatten=False))
 
         
-
-
-    
     def save_config(self, built_config):
         """ write the built config to the config file, prepending the config key and overwriting existing key """
         prepend_config_key(self.CONFIG_PATH, self.get_config_key(), built_config)
         self.config_key_list.append(self.get_config_key())
 
+
     def get_built_config(self):
         """ extract run config input from interp, used after widget has updated values """
         return self.interp.to_run_config()
+    
     
     def select_config_key_widget(self):
         """ make a widget for selecting/creating the config key """
@@ -158,7 +160,7 @@ class MainApp(BaseApp):
             project_name = ""
 
         the_date = ug.get_datetime()
-        default_key = f"{project_name}" # f"{project_name}_{the_date}"
+        default_key = f"{project_name}"
 
         self.config_key_widget = QLineEdit(default_key)
         
@@ -180,18 +182,13 @@ class MainApp(BaseApp):
         
         # add widget for selecting/creating the config key
         self.layout.addLayout(self.select_config_key_widget())
-
+        
+        # set the config widget as current layout
         self.config_layout = QVBoxLayout()
-        # self.config_layout.addLayout(self.config_log_selection_widget())    
-        # self.config_layout.addLayout(self.make_project_params_layout())
-        
-        self.set_config_widget(config_widget)
-        
+        self.set_config_widget(config_widget)        
         self.layout.addLayout(self.config_layout)
         
-        # update directories if in loaded state
-        # self.load_seg_params_log()
-        # # self.load_project_seg_config()
+
 
         
 

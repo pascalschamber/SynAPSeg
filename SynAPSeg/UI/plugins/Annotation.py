@@ -42,10 +42,10 @@ class MainApp(BaseApp):
         self.run_kwarg_layout = QFormLayout()
         self.layout.addLayout(self.run_kwarg_layout)
         self.run_kwarg_widgets = {}
-        self.add_annotation_kwargs_widgets()
+        # self.add_annotation_kwargs_widgets()
         
-        # Fetch examples
-        self.populate_example_folders()
+        # # Fetch examples
+        # self.populate_example_folders()
         
         self.post_layout()
 
@@ -93,19 +93,16 @@ class MainApp(BaseApp):
 
     def _run(self):
         """Executes Annotation process."""
-        from SynAPSeg.Annotation.annotation_IO import load_example_images
-        from SynAPSeg.Annotation import napari_widgets as nw 
-        from SynAPSeg.Annotation.annotation_core import create_napari_viewer
-
-        print(f'running in {self.app_name}...')
-        dir_examples = self.get_examples_directory()
-
-        PROJ_PATH = Path(dir_examples).parent if dir_examples else None
-        EXAMPLE_I = self.state_manager.get("selected_example", None)
         
+        EXAMPLE_I = self.state_manager.get("selected_example", None)
         if not EXAMPLE_I:
             warning_dialog(self, "Invalid example", "please select an example first")
             return 
+        
+
+        dir_examples = self.get_examples_directory()
+        PROJ_PATH = Path(dir_examples).parent if dir_examples else None
+        
         if not PROJ_PATH:
             warning_dialog(self, "Invalid project", "please select a project first")
             return 
@@ -119,6 +116,8 @@ class MainApp(BaseApp):
         set_lbl_contours = run_kwargs.get("set_lbl_contours", 0) # if 1 will show lbls with 1px border
 
         
+        from SynAPSeg.Annotation.annotation_IO import load_example_images
+        from SynAPSeg.Annotation.annotation_core import create_napari_viewer
 
         project = Project(PROJ_PATH)
         ex = project.get_example(EXAMPLE_I)
