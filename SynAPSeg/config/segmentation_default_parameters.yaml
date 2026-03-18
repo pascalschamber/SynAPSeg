@@ -36,6 +36,7 @@ MODELS_BASE_DIR:
   tooltip: "Directory containing models."
   heading: Run Configuration
   flags: ["hidden"]
+  
 ROOT_DIR:
   default_value: !ENV ${ROOT_DIR}
   widget_type: directory
@@ -253,6 +254,14 @@ MD_TEMPLATE:
   tooltip: "Initialized during building of config"
   heading: Data
   flags: ["hidden"]
+
+RETURN_OUTPUT:
+  default_value: False
+  widget_type: bool
+  tooltip: used for UI run in test mode, If true exits segmentation pipeline after first example completes and returns the predictions
+  heading: Run Configuration
+  flags: ["hidden"]
+
 
 # these are just for a skeleton of args - e.g. these are example templates but are not set during initialization explicitly
 ###########################################################################################
