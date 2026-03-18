@@ -9,6 +9,7 @@ from collections.abc import Iterable as IterableBaseClass
 from typing import List, Pattern, Union, Dict, Optional, Iterable
 import shutil
 import fnmatch
+from copy import deepcopy
 
 
 
@@ -674,6 +675,29 @@ def any_isin(el_to_check, strs_to_look_for):
 def allin(list1, list2):
     """checks if all elements in list1 are in list2"""
     return all([i in list2 for i in list1])
+
+
+def find_closest_and_remove(input_list, input_set):
+    """ 
+    For each element in the input_list, finds the closest number in the set by 
+        calculating the absolute difference and then removes the element from the set.
+    Returns:
+        output (list): closest element from input_set
+        closest_matches (list): corresponding element from input_list
+        unmatched (list): elements from input_list that were not matched
+    """
+    input_list, input_set = deepcopy(input_list), deepcopy(input_set)
+    output, closest_matches, unmatched = [], [], []
+    for number in input_list:
+        if len(input_set) == 0:
+            unmatched.append(number)
+            continue
+        closest = min(input_set, key=lambda x: abs(x - number))
+        output.append(closest)
+        closest_matches.append(number)
+        input_set.remove(closest) # Remove the found closest number from the set
+    return output, closest_matches, unmatched
+
 
 def flatten_list(nested_list):
     """recursively flatten lists of sublists"""

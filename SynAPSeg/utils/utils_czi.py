@@ -96,25 +96,11 @@ def get_czi_ch_wavelengths(czi, common_wavelengths=[405, 488, 561, 639]):
             closest_match = max(common_wavelengths) + 1 + n_exhausted
             n_exhausted +=1
         else:
-            closest_match = _find_closest_and_remove([exWavelength], wl_set)[0]
+            closest_match = ug.find_closest_and_remove([exWavelength], wl_set)[0]
         ch_wavelength[chan.attrib['Name']] = closest_match
     return ch_wavelength
 
-def _find_closest_and_remove(input_list, input_set):
-    """ For each element in the input_list, finds the closest number in the set by 
-    calculating the absolute difference.
-    """
-    input_list, input_set = copy.deepcopy(input_list), copy.deepcopy(input_set)
-    output, closest_matches, unmatched = [], [], []
-    for number in input_list:
-        if len(input_set) == 0:
-            unmatched.append(number)
-            continue
-        closest = min(input_set, key=lambda x: abs(x - number))
-        output.append(closest)
-        closest_matches.append(number)
-        input_set.remove(closest) # Remove the found closest number from the set
-    return output, closest_matches, unmatched
+
 
 
 def find_missing_czi_indicies(expected_wl, czi):
@@ -141,7 +127,7 @@ def find_missing_czi_indicies(expected_wl, czi):
 
         found_wl = {v:k for k,v in chwl.items()}  
         # missing wavelengths 
-        found, closest_matches, unmatched_wl = _find_closest_and_remove(list(found_wl.keys()), set(expected_wl.keys()))
+        found, closest_matches, unmatched_wl = ug.find_closest_and_remove(list(found_wl.keys()), set(expected_wl.keys()))
         # find index missing should be in the array
         expects_not_found = [el for el in expected_wl.keys() if el not in found]
         s_expected = sorted(expected_wl.keys())

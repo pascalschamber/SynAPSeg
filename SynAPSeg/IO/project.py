@@ -524,6 +524,25 @@ class Example:
             'updated_metadata': updated_metadata
         }
     
+    def get_px_scaling(self):
+        """ 
+        get the px scaling from own metadata, with backcompatibility 
+        
+        returns
+            dict[str, float] - like {'X': 0.07059082892416223, 'Y': 0.07059082892416223, 'Z': 0.7699999999999998}
+        """
+        from ast import literal_eval
+        
+        scaling_raw = self.exmd['image_metadata'].get('scaling') 
+        if scaling_raw:
+            if isinstance(scaling_raw, str):
+                return literal_eval(scaling_raw)
+            elif isinstance(scaling_raw, dict):
+                return scaling_raw
+            else:
+                raise ValueError(scaling_raw)
+        return None
+        
     # def update_image_scaling_metadata(self) -> bool:
     #     """
     #     Update image scaling metadata from the original image file
@@ -921,18 +940,22 @@ class Project:
         return results
 
     @staticmethod
-    def is_project_dir(project_path, examples_dir_name='examples'):
+    def is_project_dir(project_path, examples_dir_name='examples', fail_silently=True):
         """ check if a directory is a project directory that contains data """
         try:
-            exdirs = os.path.join(project_path, examples_dir_name)
+            MetadataParser = get_MetadataParser()
+            path_to_examples_dir = os.path.join(project_path, examples_dir_name)
+            example_dirs = os.listdir(path_to_examples_dir)
             conds = (
                 os.path.exists(project_path), 
-                os.path.exists(exdirs),
-                len(os.listdir(exdirs)) > 0,
-                any([len(MetadataParser.try_get_metadata(exdir))>0 for exdir in os.listdir(exdirs)]),
+                os.path.exists(path_to_examples_dir),
+                len(example_dirs) > 0,
+                any([len(MetadataParser.try_get_metadata(os.path.join(path_to_examples_dir, exdir)))>0 for exdir in example_dirs]),
             )
             return all(conds)
-        except:
+        except Exception as e:
+            if not fail_silently: 
+                print(f'is_project_dir failed:\n{e}\n')
             return False
         
     @staticmethod

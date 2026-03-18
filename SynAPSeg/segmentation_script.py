@@ -169,10 +169,10 @@ def main(
         
         # clear gpu memory
         uML.clear_gpu_memory(torch=torch)
-        
-        if SEG_CONFIG.get('RETURN_OUTPUT', False):
+                
+        if SEG_CONFIG.get('RETURN_OUTPUT', False): # for ui test
             return arr, predictions, ex_md
-
+        
         del(predictions, arr)
         gc.collect()
         
@@ -205,18 +205,7 @@ if __name__ == '__main__':
  
     # run
     config_keys = [
-        # '2025_0928_hpc_psd95andrbPV_zstacks_wCareamics'
-        # "2025_0928_hpc_psd95andrbPV_zstacks_wStardist3dV3",
-        # "2025_1208_bassonHomer_staining_for_coloc_figure",
-        # "2025_0402_AGP_tilescans",
-        # 'synapseg_121025_PFA_GluA1', 
-        # 'synapseg_121025_PFA_X2PSD95', 
         # '2026_0108_synapseg_supFig1',
-        # "20260109_traf3KO_vGatCre_PSD95GFP_PV"
-        # "synapseg_normal_Btbd11_methanol",
-        # "20260109_traf3KO_vGatCre_PSD95GFP_PV_round2",
-        "TripleHM_BLA_test",
-        # "TARP_BTBD11_OE",
     ]
 
     for CONFIG_KEY in config_keys:
@@ -225,7 +214,4 @@ if __name__ == '__main__':
         main(CONFIG_KEY=CONFIG_KEY, built_config=None, disp_i_slice=disp_i_slice)
 
 
-    # notes 
-    # install jupyter ipywidgets
-    # look into this msg: RTX 4090') that has Tensor Cores. To properly utilize them, you should set torch.set_float32_matmul_precision('medium' | 'high')
-
+   

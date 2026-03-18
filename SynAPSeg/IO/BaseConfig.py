@@ -143,7 +143,8 @@ class BaseConfig(MutableMapping):
                 note if trying to init from default_params alone, ensure you pass params={'config_key': ''}, then read from that path
             params (dict): dictionary containing the configuration attributes 
                 used for copying to set params directly without reloading 
-            kwargs (dict): additional arguments which get set as attributes during init
+            kwargs (dict): additional arguments which get set as attributes during init, 
+                allows side-stepping the empty params check at the bottom.
         """
         self.params = params or {}
         self.config_key = config_key
@@ -174,6 +175,12 @@ class BaseConfig(MutableMapping):
     
 
     def _load_config(self):
+        """ 
+        read config from file, resolve variable references, and unspecified default parameters
+            if self.config_key is not empty only load params under that key, 
+            else load everything 
+        
+        """
         if self.config_path is None:
             raise ValueError('config_path is None, init with path to quantification_config.yaml')
         if not os.path.exists(self.config_path):
@@ -395,8 +402,10 @@ class BaseConfig(MutableMapping):
 
 
     def get_configuration(self):
-        """ returns self.params organized by headers defined in the default params, but only with key:default_value  
-                used for UI.segmentation
+        """ 
+        returns self.params organized under headers defined in the param specs, 
+            default values are replaced if present
+            used for parsing config widget layout in UI.segmentation
         """
         
         configObj, config_dict = load_default_config(self.default_parameters_path, **self.params)
@@ -411,12 +420,19 @@ class BaseConfig(MutableMapping):
         return new_dict
 
 
+def make_config_entry(default_parameters_path, **init_params) -> dict:
+    params = {'config_key': 'template', **init_params}
+    conf = BaseConfig(params.get('config_key'), None, default_parameters_path=default_parameters_path, params=params)
+    config = conf._read_config(default_parameters_path)
+    return config
 
-
-def load_default_config(default_parameters_path, **init_params):
+def load_default_config(default_parameters_path, **init_params) -> tuple[BaseConfig, dict]:
     """ 
     init a config object from default params path only 
         may need to define env variables as in example below 
+    Returns:
+        conf - BaseConfig: resolved parameters holding default values
+        config - dict: param specs
     """
         
     params = {'config_key': 'template', **init_params}

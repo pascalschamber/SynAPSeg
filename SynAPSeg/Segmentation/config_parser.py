@@ -285,13 +285,12 @@ def get_schema_interpreter(default_params_path:str):
 
 def get_merged_values(SEG_CONFIG:BaseConfig):
     """
-    update merged values with user's config values
-        this is abit of a headache, but now can validate params and still pass widget config field
-        strategy is to 
-            load user values 
-            use user model config values to get model param specs invidually, compile and pass 
-                as current value of spec.model.model_params
-        TODO  maybe need special config flag for this widget?? 
+    update dynamic parameters (e.g. MODEL_PARAMS) with param specs that have user's value if set
+        these specs will get passed to widget config field
+        strategy is to:
+        1) load user values 
+        2) use user model config values to get model param specs invidually, compile and pass 
+            as current value of spec.model.model_params
     """
 
     # extract user's set values otherwise uses default value
