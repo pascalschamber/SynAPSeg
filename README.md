@@ -1,12 +1,8 @@
-
-# SynAPSeg
-![logo](/SynAPSeg/UI/icons/SynAPSeg_logo.png)
-
-SynAPSeg is a flexible Python image analysis framework for fully automated, deep learning-based detection and quantification of fluorescent microscopy data. 
-
+## Overview
+SynAPSeg is a flexible Python image analysis framework for fully automated, deep learning-based detection and quantification of fluorescent microscopy data.<br>
 While designed with synaptic analysis in mind, the platform is agnostic to specific experimental conditions and serves as a general-purpose tool for large-scale image analysis.
-
-![overview graphic](assets/2026_0310_SynAPSeg__Figure%203.png)
+<br>
+<br>
 
 ## Features
 * **Graphical User Interface:**  No coding experience needed.
@@ -19,6 +15,13 @@ While designed with synaptic analysis in mind, the platform is agnostic to speci
 * **Open Data Management:** Generates human-readable metadata and employs a project-based structure, allowing external tools to interface seamlessly for tasks like brain atlas registration.
 * **Plugin-Style Framework:** Developers can easily incorporate new deep learning models or quantification techniques with minimal code.
 * **Multi-Platform Support:** Tested across Windows, Mac (Apple silicon), and Linux operating systems.
+
+<br>
+<br>
+
+<img src="assets/2026_0310_SynAPSeg__Figure%203.png" alt="overview graphic" height="50%" />
+<br>
+<br>
 
 ## Core modules
 The framework is structured around three core stages:
