@@ -768,17 +768,33 @@ def show_gif(images, figsize=(12,12), duration=200, loop=0, cmap='gray', hide_ax
 
 
 def show_in_napari(imgs, lbl_img_contours=1):
-    """show arrays in napari"""
+    """show arrays in napari """
     viewer = napari.Viewer()
     imgs = [imgs] if isinstance(imgs, np.ndarray) else imgs
     assert isinstance(imgs, list)
+    
     for img in imgs:
+        # if filepath, load it
+        if isinstance(img, str):
+            if not os.path.exists(img): 
+                raise FileNotFoundError(f"{img}")
+            
+            from SynAPSeg.IO.image_parser import ImageParser
+            filepath = img
+            parser = ImageParser.create_parser(filepath)
+            _, img = parser.load_image()
+            fmt = uip.estimate_format(img.shape)
+            img, fmt = uip.standardize_collapse(img, fmt, 'STCZYX')
+            print(f"loaded filepath: {filepath}.\n  <{img.dtype.name}> shape: {img.shape} -> interpreted format: {fmt}")
+            
         if img.dtype == np.int32:
             lbl_layer = viewer.add_labels(img)
             lbl_layer.contour = lbl_img_contours
         else:
             viewer.add_image(img)
     napari.run()
+
+
 
 
 def show_timepoints(all_mips_arr, n_channels, show_tps=[0, -1]):

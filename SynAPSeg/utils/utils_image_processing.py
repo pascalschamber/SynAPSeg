@@ -1,4 +1,3 @@
-
 from tifffile import imread, imwrite, TiffFile
 import numpy as np
 import matplotlib.pyplot as plt
@@ -12,7 +11,7 @@ from skimage.measure import regionprops
 from skimage.segmentation import find_boundaries
 
 from SynAPSeg.utils import utils_colocalization as uc
-from SynAPSeg.utils import utils_plotting as up
+
 
 # import cv2   #!!! DO NOT USE CV2 FOR non-8bit IMAGES, does not read channels correctly
 
@@ -1005,6 +1004,7 @@ def plot_thresh(volume, title='', thresh_func=None, **func_kwargs):
     from skimage import exposure
     import matplotlib.pyplot as plt
     from skimage import filters
+    from SynAPSeg.utils import utils_plotting as up
     
     if thresh_func is None:
         thresh_func = filters.threshold_otsu
@@ -2060,9 +2060,14 @@ def estimate_format(shape, default_format: str = 'STCZYX', channel_max: int = 4)
                 pool[0] = 'C'
             else:
                 pool.append('C')
+                
+        # early resolve estimating cyx if ndim==3 and shape[0] is   <=4      
+        elif n == 3 and shape[0] <= channel_max:
+            return 'CYX'
 
     # --- 4) Special handling for channels ('C') ---
     if 'C' in pool and remaining_indices:
+        
         # Dim candidates that look like channels
         candidate_small = [i for i in remaining_indices if shape[i] <= channel_max]
         c_idx = None

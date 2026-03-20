@@ -41,7 +41,39 @@ def update_format(current_format, removed_axes=''):
 
 
 
+def create_parser( 
+                    file_path: str, 
+                    params: Optional[dict]=None, 
+                    load_kwargs: Optional[dict]=None
+):
+    """
+    Factory method to create the appropriate image parser
+        based on regex patterns that match the end of the file path.
+    Args:
+        file_path:
+        params: TODO describe, consider changing to reflect its really config used in .run()
+    TODO:
+        make params optionally unless using in seg pipeline
+    """
+    
+    parsers = {
+        r"\.czi$": CZIImageParser,
+        r"\.(tiff|tif)$": TIFFImageParser,   # TODO this is going to intercept OME.TIFFs but may want to actually read them with the aicsimgio lib
+        r"\..*$": _determine_general_parser(),          
+        # r"\.ims$": IMSImageParser,  # TODO, not currently implemented
+    }
 
+    for pattern, parser_cls in parsers.items():
+        if re.search(pattern, file_path, flags=re.IGNORECASE):
+            return parser_cls(file_path, params=params, load_kwargs=load_kwargs)
+    
+    parser_cls = _determine_general_parser()
+    
+    try:
+        return parser_cls(file_path, params=params, load_kwargs=load_kwargs)
+    except Exception as e:
+        raise  ValueError (f"no suitable parser could be created based on image path: {file_path}") from e
+    
 
 class ImageParser(ABC):
     """
@@ -64,11 +96,28 @@ class ImageParser(ABC):
         self.metadata = None
         self.fatal_error = False
     
+    @classmethod
+    def create_parser(cls,                              # keeping here for back-compat
+                      file_path: str, 
+                      params: Optional[dict]=None, 
+                      load_kwargs: Optional[dict]=None
+    ):
+        """
+        Factory method to create the appropriate image parser
+            based on regex patterns that match the end of the file path.
+        Args:
+            file_path:
+            params: TODO describe, consider changing to reflect its really config used in .run()
+        TODO:
+            make params optional unless using in seg pipeline
+        """
+        return create_parser(file_path, params=params, load_kwargs=load_kwargs) 
+    
     def __str__(self):
         return pprint.pformat(vars(self))
         
     @abstractmethod
-    def load_image(self, load_kwargs):
+    def load_image(self, load_kwargs: Optional[dict]=None):
         """Load the image from the source defined in parameters."""
         pass
 
@@ -257,25 +306,7 @@ class ImageParser(ABC):
 
         
         
-    @classmethod
-    def create_parser(cls, file_path: str, params: dict, load_kwargs=None):
-        """
-        Factory method to create the appropriate image parser
-        based on regex patterns that match the end of the file path.
-        """
-        
-        parsers = {
-            r"\.czi$": CZIImageParser,
-            # r"\.ims$": IMSImageParser,  # TODO, not currently implemented
-            r"\.(tiff|tif)$": TIFFImageParser,   # TODO this is going to intercept OME.TIFFs but may want to actually read them with the aicsimgio lib
-            r"\..*$": _determine_general_parser(),          
-        }
 
-        for pattern, parser_cls in parsers.items():
-            if re.search(pattern, file_path, flags=re.IGNORECASE):
-                return parser_cls(file_path, params, load_kwargs=load_kwargs)
-
-        raise ValueError (f"no suitable parser could be created based on image path: {file_path}")
 
 
 class IMSImageParser(ImageParser):
@@ -302,7 +333,7 @@ class TIFFImageParser(ImageParser):
     Parser for handling .tiff images.
     """
 
-    def load_image(self, load_kwargs):
+    def load_image(self, load_kwargs: Optional[dict]=None):
         import tifffile
         im = tifffile.imread(self.file_path)
         return None, im
@@ -360,6 +391,7 @@ class CZIImageParser(ImageParser):
     
     def read_file(self, load_kwargs: Optional[dict]=None):
         """ 
+        # TODO: UPDATE object types relevant to czis
         Returns an AICSImage object, potentially using the BioformatsReader. 
             Note may fail if reading image where scenes are saved across multiple files during acquisition 
             Therefore load_image is prefered
@@ -646,6 +678,10 @@ if __name__ == '__main__' and bool(0):
             # 'mag': uCzi.get_czi_mag,
 
     fp = r"D:\BygraveLab\Confocal data archive\Pascal\VHL_VglutHomer\2024_0328_VHL1_mark--VHL1-1.1--.czi"
+    
+    parser = create_parser(fp)
+    czi_obj = parser.read_file()
+    
 
     czi_parser = CZIImageParser(fp)
     czi_obj = czi_parser.read_file()
