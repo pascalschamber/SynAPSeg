@@ -22,11 +22,8 @@ dependencies:
       
       # ---- TensorFlow (Mac Specific) ----
       # Note: tensorflow-metal adds GPU acceleration for M1/M2/M3 chips and replaces tensorflow entirely
-      - tensorflow-macos
-      - tensorflow-metal 
-
-      # Older macs can try installing tensorflow alone (comment out above lines)
-      # - tensorflow
+      - tensorflow-metal  # Older macs can try installing tensorflow alone (comment out this line)
+      - tensorflow
       
       # ---- PyTorch ----
       - torch
@@ -52,8 +49,8 @@ dependencies:
       - pingouin
       - bioformats_jar
       
-      # ---- Model Libraries ----
-      - stardist
+      # ---- Model Libraries ---- 
+      - stardist            # required, rest are optional
       - cellpose[gui]
       - segmentation-models
       - careamics
