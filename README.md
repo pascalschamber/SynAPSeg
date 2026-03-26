@@ -4,6 +4,13 @@ While designed with synaptic analysis in mind, the platform is agnostic to speci
 <br>
 <br>
 
+## Quick links
+* [getting started tutorial](https://youtu.be/FDJTJSOGUt0)
+* [SynAPSeg dataset and custom models](https://zenodo.org/records/18988899)
+* [preprint](https://doi.org/10.64898/2026.03.12.711395)
+* [preprint data and analysis code](https://github.com/pascalschamber/SynAPSeg_manuscript_code)
+* [wiki](https://github.com/pascalschamber/SynAPSeg/wiki) ** in development **
+
 ## Features
 * **Graphical User Interface:**  No coding experience needed.
 * **Unified Model Integration:** Integrates modern deep learning models through a single interface.
@@ -74,7 +81,8 @@ Complete the below steps in your terminal
 
 1. Navigate to the directory where the repository was downloaded/cloned on your computer
 ```bash
-cd ".\downloads\SynAPSeg"
+# for example: 
+cd "\path\to\SynAPSeg-main"
 ```
 
 
@@ -100,8 +108,7 @@ pip install -e .
 python -m SynAPSeg
 ```
 
-More more information see the full video demo: 
-* **coming soon**
+For more information see the [getting started tutorial](https://youtu.be/FDJTJSOGUt0). 
 
 ---
 
