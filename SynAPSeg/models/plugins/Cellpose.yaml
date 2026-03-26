@@ -4,7 +4,7 @@ model_path:
   tooltip: Path to directory containing the trained model
   flags: ["required"]
   extra:
-    path_type: directory
+    path_type: file
   
 load_model_kwargs:
   gpu:
@@ -32,12 +32,12 @@ predict_kwargs:
     tooltip: set to True to run 3D segmentation on 3D/4D image input. Defaults to False.
     group: predict_kwargs
   flow_threshold: 
-    default_value: null
+    default_value: 0.6
     widget_type: float
     tooltip: Flow threshold for prediction
     group: predict_kwargs
   cellprob_threshold: 
-    default_value: null
+    default_value: 0.0
     widget_type: float
     tooltip: Cell probability threshold for prediction
     group: predict_kwargs
