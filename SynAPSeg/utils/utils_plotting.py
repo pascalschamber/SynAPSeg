@@ -1288,6 +1288,7 @@ def set_global_textsize_defaults(global_textsize=8, override_defaults: dict = {}
 
 
 def palette_cat(plot_df, hue_var):
+    """ create a categorical palette for each unique value in the hue_var column using glasbey.create_palette """
     import glasbey
     return dict(zip(plot_df[hue_var].unique(), glasbey.create_palette(palette_size=plot_df[hue_var].nunique())))
 
