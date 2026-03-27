@@ -3,9 +3,42 @@
 provides several different functions for plotting data
 
 """
+
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
+
+
+def determine_feature_uniqueness(X, features, outpath=None) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """ 
+    determine auto-correlation of regionprop params - which capture unique information
+        plots feature corr matrix dendrogram
+    
+    Args:
+        X: df
+        features: list[str]: column names to use as features 
+        outpath: str: if provided, save dendrogram figure here
+    
+    Returns:
+        corr: feature autocorrelation matrix
+        vif: feature variance_inflation_factor scores 
+    """
+    from statsmodels.stats.outliers_influence import variance_inflation_factor
+    from SynAPSeg.utils.utils_plotting import save_fig
+
+    X = X[features].dropna()
+    corr = X.corr()
+
+    sns.clustermap(corr, cmap="coolwarm", vmin=-1, vmax=1, figsize=(10,10))
+    if outpath: save_fig(outpath)
+    plt.show()
+
+    vif = pd.DataFrame()
+    vif["feature"] = X.columns
+    vif["VIF"] = [variance_inflation_factor(X.values, i) for i in range(X.shape[1])]
+    print(vif.sort_values("VIF"))
+
+    return corr , vif
 
 
 def plot_ptile_displot(
@@ -19,7 +52,7 @@ def plot_ptile_displot(
     PTILE_FUNCS=None,
     col_wrap = 2,
     **histplot_kwargs
-):
+    ) -> pd.DataFrame:
     """
     Filter pltdf by a percentile condition defined in PTILE_FUNCS
         and plot a seaborn displot on the chosen column.

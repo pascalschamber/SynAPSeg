@@ -1,20 +1,42 @@
 from __future__ import annotations
-
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple, Union, Iterable
 import pandas as pd
 import numpy as np
-
-# Optional imports (guarded) for concrete examples
-try:
-    from sklearn.preprocessing import StandardScaler, OneHotEncoder, RobustScaler
-    from sklearn.decomposition import PCA
-    from sklearn.cluster import KMeans
-except Exception:  # pragma: no cover
-    StandardScaler = OneHotEncoder = RobustScaler = PCA = KMeans = None
+import inspect
+from sklearn.preprocessing import StandardScaler, OneHotEncoder, RobustScaler
+from sklearn.decomposition import PCA
+from sklearn.cluster import KMeans
 
 # from .ClassificationInterp import CompositePreprocessor
+
+
+# -----------------------------
+# helpers
+# -----------------------------
+        
+def print_module_registries():
+    """
+    Scans the module's namespace and prints the variable name 
+    of any object that is an instance of the Registry class.
+    """
+    print("Scanning module for Registries...\n")
+    
+    # globals() returns a dictionary of the current module's namespace
+    module_namespace = globals()
+    
+    found_registries = False
+    
+    for var_name, obj in module_namespace.items():
+        # Check if the object is an instance of your Registry class
+        if isinstance(obj, _Registry):
+            print(f"Found Registry: '{var_name}' -> options: {obj.available()}")
+            found_registries = True
+            
+    if not found_registries:
+        print("No registries found in the current namespace.")
+
 
 # -----------------------------
 # 1) Data Schema & Resolver
@@ -25,7 +47,7 @@ class DataSchema:
     id_cols: List[str] = field(default_factory=list)
     group_cols: List[str] = field(default_factory=list)
     cat_cols: List[str] = field(default_factory=list)
-    num_cols: List[str] = field(default_factory=list)
+    num_cols: List[str] = field(default_factory=list) # numerical columns
 
 class SchemaResolver:
     @staticmethod
@@ -73,7 +95,7 @@ class BasePreprocessor(ABC):
     def clone(self) -> "BasePreprocessor":
         return type(self)(**self.get_params())
     
-# Example concrete preprocessors
+# concrete preprocessors
 
 class StandardScalePreprocessor(BasePreprocessor):
     name = "standard_scale"
@@ -142,7 +164,6 @@ class BaseEncoder(ABC):
         return type(self)(**self.get_params())
 
 # concrete encoders
-import inspect
 
 class OneHotCategoricalEncoder(BaseEncoder):
     name = "one_hot"
@@ -283,10 +304,7 @@ class KMeansClusterer(BaseClusterer):
     def get_params(self): 
         return dict(self._init_params)
 
-try:
-    from sklearn_extra.cluster import KMedoids
-except Exception:
-    KMedoids = None
+
 
 class PAMClusterer(BaseClusterer):
     """
@@ -304,11 +322,12 @@ class PAMClusterer(BaseClusterer):
         max_iter: int = 300,
         random_state: Optional[int] = 0,
     ):
-        if KMedoids is None:
-            raise ImportError(
-                "sklearn-extra is required for PAMClusterer. "
-                "Install with: pip install scikit-learn-extra"
-            )
+        
+        try:
+            from sklearn_extra.cluster import KMedoids
+        except Exception as e:
+            raise ImportError("scikit-learn-extra is required for ClaraPAMClusterer (pip install scikit-learn-extra)") from e
+        
         self._init_params = {
             "n_clusters": n_clusters,
             "metric": metric,
@@ -389,9 +408,7 @@ class ClaraPAMClusterer(BaseClusterer):
         max_iter: int = 300,
         random_state: Optional[int] = 0,
     ):
-        if KMedoids is None:
-            raise ImportError("scikit-learn-extra is required for ClaraPAMClusterer (pip install scikit-learn-extra)")
-
+        
         self._init_params = dict(
             n_clusters=n_clusters, metric=metric, subsample_size=subsample_size, repeats=repeats,
             chunk_size=chunk_size, init=init, method=method, max_iter=max_iter, random_state=random_state
@@ -1275,6 +1292,8 @@ class ClassificationPipeline:
         return result_df, meta
 
 
+
+                
 # -----------------------------
 # 8) Example usage
 # -----------------------------
@@ -1318,9 +1337,6 @@ if __name__ == "__main__":
         "univariate": {"name": "anova", "params": {"fdr_method": "fdr_bh"}},
         "importance": {"name": "rf_permutation", "params": {"n_estimators": 400, "n_repeats": 5, "n_jobs": 1}},
         "grouping": {"name": "global"},  # or {"name": "within_groups"} to match your clustering scheme
-        # Optional: only if you have fitted objects and want centroid back-projection:
-        # "backprojector": {"name": "pca_backproject"},
-        # "extra_feature_cols": ["treatment__drugA", "sex__female"]  # if you've kept encoded cols
     }
 
     # Optional artifacts if you want back-projection (supply if you have them)
