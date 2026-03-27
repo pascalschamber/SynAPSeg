@@ -27,10 +27,11 @@ import tifffile
 
 try:
     from pylibCZIrw import czi as pyczi
+    pyCziReader = pyczi.CziReader # see ref: https://github.com/ZEISS/pylibczirw/blob/main/doc/jupyter_notebooks/pylibCZIrw_4_1_0.ipynb
 except:
     pyczi = None
+    pyCziReader = None
     
-pyCziReader = pyczi.CziReader # see ref: https://github.com/ZEISS/pylibczirw/blob/main/doc/jupyter_notebooks/pylibCZIrw_4_1_0.ipynb
 
 IndexLike = Union[int, slice, str, None]
 
@@ -366,7 +367,7 @@ class LevelInfo:
 
 class PyramidOMEReader:
     """
-    Lazy wrapper around an OME-TIFF with multi-resolution pyramid.
+    Lazy wrapper around an OME-TIFF with multi-resolution pyramid. Uses tifffile lib.
         - Does NOT load pixel data at init.
         - Discovers series, levels, shapes, axes, dtype, downsampling.
         - Exposes OME-XML and a minimal structured metadata summary.
@@ -647,7 +648,8 @@ class PyramidOMEReader:
                     # acquisition timestamp
                     summary["acquisition_date"] = getattr(img, "acquisition_date", None)
             except Exception:
-                # Fall through to raw XML if parsing fails
+                # TODO: Fall through to raw XML if parsing fails
+                # summary["ome_xml_raw_present"] = False # TODO: shouldn't this be invoked?
                 pass
         # Even if parsed, keep the raw for reference
         summary["ome_xml_raw_present"] = True
