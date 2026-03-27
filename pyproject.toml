@@ -24,6 +24,7 @@ dependencies = [
     "pingouin",
     "stardist",
     "tensorflow",              # "tensorflow<2.11", technically only req for windows native GPU support
+    "glasbey",
 ]
 
 # to test 
