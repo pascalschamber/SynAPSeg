@@ -193,7 +193,7 @@ class BaseConfig(MutableMapping):
         except KeyError as e:
             msg=f"{self.config_key} not found in config.\navailable keys:\n\t" + \
                 "\n\t".join(list(configs.keys()))
-            raise KeyError(msg) from e
+            raise ValueError(msg) from e
         
         self.resolve_variable_references(self.params)
         self.resolve_unspecified_default_parameters(self.default_parameters_path, self.params)

@@ -354,18 +354,16 @@ class Example:
         default_params_path = default_params_path or constants.QUANT_DEFAULT_PARAMETERS_PATH
 
         if colocalizations is None: # try to load from quant config
-            try:
-                qparams = BaseConfig(conf_key, conf_path, default_params_path)
-                # colocalizations = qparams['COLOCALIZATIONS'] # old format
-                colocalizations = qparams['STAGE_PARAMS']['colocalization']['COLOCALIZATIONS'] # new format
-                
-            except KeyError:
-                qconf = read_config(conf_path)
-                msg=f"{conf_key} not found in config.\navailable keys:\n\t" + \
-                    "\n\t".join(list(qconf.keys()))
-                print(msg)
-                raise
             
+            qparams = BaseConfig(conf_key, conf_path, default_params_path)
+            
+            coloc_stage_name = 'colocalization'
+            if 'colocalization' not in qparams['STAGE_PARAMS'].keys():
+                raise ValueError('config file does not have a colocalization stage associated.')
+            
+            # colocalizations = qparams['COLOCALIZATIONS'] # old format
+            colocalizations = qparams['STAGE_PARAMS']['colocalization']['COLOCALIZATIONS'] # new format
+                           
 
         self.exmd.update({'COLOCALIZE_PARAMS':{"colocalizations":colocalizations}})
         image_channels, clc_nuc_info = MetadataParser.get_imgdb_colocal_nuclei_info(self.exmd)
