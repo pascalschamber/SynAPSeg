@@ -471,7 +471,7 @@ class MetadataParser:
         level='INFO'
     ) -> logging.Logger:
         """ setup a logger for a project """
-        from common.Logging import get_logger
+        from SynAPSeg.common.Logging import get_logger
         return get_logger(
             name = name, 
             log_dir = log_dir, 
