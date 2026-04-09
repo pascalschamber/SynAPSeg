@@ -27,14 +27,16 @@ dependencies:
       - torch
       - torchvision
 
-      # model libraries - each is `optional`, only need to install if want to use it
-      - stardist
+      # model libraries
+      - stardist            # required, rest are optional
       - gputools
+      
+      # optional only need to install if want to use it
       - cellpose[gui]
       - segmentation-models
       - careamics
 
-      # ---- Training / Image Augmentation ----
+      # ---- Training / Image Augmentation ----  # optional
       - volumentations-3D
       - albumentations
 
@@ -58,7 +60,8 @@ dependencies:
       - csbdeep
       - numba
       - pingouin
+      - bioformats_jar # added 1/28 to support bioformats reader via AICSImage
+      - glasbey
       
-      # if realizing missed a library add below, then once confirm env setup, add back up top
-      - bioformats_jar # added 1/28 to support bioformats reader via AICSImage, need to add this everywhere except this file
+      # if realized missed a library add below, then once confirm env setup, add back up top
       

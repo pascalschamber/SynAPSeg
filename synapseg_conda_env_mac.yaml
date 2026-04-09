@@ -18,16 +18,23 @@ dependencies:
   - numpy=1.26.4
 
   - pip:
+      - "lxml>=5.0"         # added b/c solved install difficulties unique to M1 chips.. 
       - "numpy==1.26.4"     # essential requirement to get all libraries to cooperate
       
       # ---- TensorFlow (Mac Specific) ----
-      # Note: tensorflow-metal adds GPU acceleration for M1/M2/M3 chips and replaces tensorflow entirely
-      - tensorflow-metal  # Older macs can try installing tensorflow alone (comment out this line)
+      # - tensorflow-metal  # Newer versions of TF obviate this package in the past tensorflow-metal added GPU acceleration for M1/M2/M3 chips but they seem to bundle this with tensorflow by default now?
+      # Now, doesn't seem to be required, but could be different for some machines 
       - tensorflow
       
       # ---- PyTorch ----
       - torch
       - torchvision
+      
+      # ---- Model Libraries ---- 
+      - stardist            # required, rest are optional
+      - cellpose[gui]
+      - segmentation-models
+      - careamics
 
       # ---- Imaging / analysis stack ----
       - "napari[all]"
@@ -48,9 +55,4 @@ dependencies:
       - csbdeep
       - pingouin
       - bioformats_jar
-      
-      # ---- Model Libraries ---- 
-      - stardist            # required, rest are optional
-      - cellpose[gui]
-      - segmentation-models
-      - careamics
+      - glasbey
