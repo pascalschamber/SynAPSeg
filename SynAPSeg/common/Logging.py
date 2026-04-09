@@ -2,16 +2,24 @@ import logging
 import os
 from pathlib import Path
 from typing import Optional
-
+import sys
+from rich.logging import RichHandler
 
 def setup_default_logger(name):
     logger = logging.getLogger(name)
     if not logger.handlers:
-        handler = logging.StreamHandler()
+        handler = RichHandler(
+            show_path=False,   # Keeps the logs clean
+            markup=True,       # Allows you to use [bold red] etc. in strings
+            rich_tracebacks=True
+        )
+        # handler = logging.StreamHandler(sys.stdout)
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         handler.setFormatter(formatter)
         logger.addHandler(handler)
     return logger
+
+# handler.stream = open(sys.stdout.fileno(), mode='w', encoding='utf-8', closefd=False)
 
 def get_logger(
     name: str,
@@ -29,19 +37,25 @@ def get_logger(
     log_path = os.path.join(log_dir, log_filename)
 
     logger = logging.getLogger(name)
+    
     if logger.handlers:
         return logger  # already configured
 
     logger.setLevel(level)
 
     # Console handler
-    stream_handler = logging.StreamHandler()
+    # stream_handler = logging.StreamHandler()
+    stream_handler = RichHandler(
+            show_path=False,   # Keeps the logs clean
+            markup=True,       # Allows you to use [bold red] etc. in strings
+            rich_tracebacks=True
+    )
     stream_fmt = SafeStageFormatter("%(levelname)s: %(name)s - [%(stage)s] - %(message)s")
     stream_handler.setFormatter(stream_fmt)
     logger.addHandler(stream_handler)
 
     # File handler
-    file_handler = logging.FileHandler(log_path)
+    file_handler = logging.FileHandler(log_path, encoding='utf-8')
     file_fmt = SafeStageFormatter("%(asctime)s %(levelname)s: %(name)s - [%(stage)s] - %(message)s")
     file_handler.setFormatter(file_fmt)
     logger.addHandler(file_handler)
