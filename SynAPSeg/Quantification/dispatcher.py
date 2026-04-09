@@ -184,10 +184,12 @@ class ExampleDispatcher(DispatcherBase):
         else:
             try:                
                 scale_factor = PX_UNITS_CONVERSION_TO_UM[px_unit]
-                px_sizes= {dim: s * scale_factor for dim, s in ast.literal_eval(scaling_raw).items()}
+                scaling_dict = scaling_raw if isinstance(scaling_raw, dict) else ast.literal_eval(scaling_raw)  # handle if scaling is in string representation 
+                scaling_dict = {k: (v if isinstance(v, (int, float)) else 1) for k,v in scaling_dict.items()}   # sanitize scaling factors so None is converted to 1 
+                px_sizes= {dim: s * scale_factor for dim, s in scaling_dict.items()}
                 self.logger.info(f"setting PX_SIZES using self.exmd['image_metadata']['scaling'] ({scaling_raw}) and scale_factor ({scale_factor})")
             except Exception as e:
-                self.logger.warning(f"failed to extract PX_SIZES from from exmd. using default.\nException:\n{e}")
+                self.logger.warning(f"failed to extract PX_SIZES from exmd scaling `{scaling_raw}`. All sizes will be in pixels.\nException:\n{e}")
 
         self.config.params["PX_SIZES"] = px_sizes
         self.logger.info(f"PX_SIZES={px_sizes}")
