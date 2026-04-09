@@ -629,17 +629,16 @@ def update_header_spec_values(model_params, model_configuration_spec, update_val
     # update config values with user's values
     assert is_dict_of_dicts(byheadings_model_dict)
 
-    try:
-        for header, param_val_pairs in byheadings_model_dict.items():
-            for param_name, param_val in param_val_pairs.items():
+    
+    for header, param_val_pairs in byheadings_model_dict.items():
+        for param_name, param_val in param_val_pairs.items():
+            try:
                 # model_configuration_spec[header][param_name]['default_value'] = param_val 
                 model_configuration_spec[header][param_name][update_value_key] = param_val
-    except Exception as e:
-        raise ValueError(
-            f"Error: {e}\n"
-            f"header: {header}\n param_name: {param_name}\n update_value_key: {update_value_key}\n param_val: {param_val}\n"
-            "ensure parameter exists in plugin default parameters config" 
-        )
+            except Exception as e:
+                print(
+                    f"Error: {e}\nheader: {header}\n param_name: {param_name}\n update_value_key: {update_value_key}\n param_val: {param_val}\nensure parameter exists in plugin default parameters config"
+                )
         
     assert validate_header_spec_format(model_configuration_spec)
     updated_model_specs = model_configuration_spec
