@@ -18,7 +18,6 @@ from SynAPSeg.IO.BaseConfig import BaseConfig
 from SynAPSeg.config.param_engine.interpreter import SchemaInterpreter
 
 
-
 class ConfigParser:
     """ handles setting up config for run and sets values that do not need to be initialized in config"""
     def __init__(self, config, OUTPUT_DIR_PROJ=None, project_object=None):
@@ -193,28 +192,26 @@ class ConfigParser:
         return image_filepaths_to_process
 
 
-# functional 
+# functional
 ####################################################
 
 def build_md_template(channel_info, input_image_format):
-    
-    DATA_METADATA = {
-        'channel_info': channel_info,
-        'data_shapes': {},
-        'data_formats': {},
-        'input_image_format': input_image_format
-    }
-    
-    MD_TEMPLATE = dict(
-        data_metadata= DATA_METADATA,
-        image_path= None,
-        image_metadata= {},
-        annotation_metadata= {'notes':'', 'status':''},
-        COLOCALIZE_PARAMS= {'colocalizations': []},
-        segmentation_pipeline_config = {}
-    )
 
+    MD_TEMPLATE = dict(
+        data_metadata={
+            "channel_info": channel_info,
+            "data_shapes": {},
+            "data_formats": {},
+            "input_image_format": input_image_format,
+        },
+        image_path=None,
+        image_metadata={},  # set by image_parser class
+        annotation_metadata={"notes": "", "status": ""},
+        COLOCALIZE_PARAMS={"colocalizations": []},
+        segmentation_pipeline_config={},
+    )
     return MD_TEMPLATE
+
 
 def find_image_files(image_dir, search_function, filetype, pattern) -> list:
     """Find image files based on configuration"""
@@ -235,7 +232,7 @@ def find_image_files(image_dir, search_function, filetype, pattern) -> list:
         ]
     
     return image_filepaths_to_process
-    
+
 def shuffle_list(alist, seed=42) -> None:
     """ shuffle the a list in place, e.g. for blinding by randomizing order of files """
     import random
@@ -312,6 +309,3 @@ def get_interpreter_run_config(interp: SchemaInterpreter) -> dict:
             'Run Configuration.':'', 'Data.':'', 'Metadata.':'', 'Model.':'', 'current_value.':'', 'root.':''
         }
     )
-
-
-

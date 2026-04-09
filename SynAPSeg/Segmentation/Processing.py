@@ -42,9 +42,6 @@ def get_reader(img_path):
 #         self.get_reader(img_path)
 
 
-
-    
-
 class DispatcherCollection:
     """
     to handle scenes in czi images need to parse input files ahead of pipeline, 
@@ -83,20 +80,20 @@ class DispatcherCollection:
 
     def get_n_disp(self):
         return self.n_disp
-    
+
     def set_start_run_time(self, dispatcher):
         """ set disp start time and run start time if not already set """
         dispatcher.init_t0()
         if self.t0 is None:
             self.t0 = dispatcher.t0
-    
+
     def get_progress(self, dispatcher):
         """returns string representation of progress through dispatchers"""
         image_i = dispatcher.image_i
         scene_name = dispatcher.scene_name
         self.set_start_run_time(dispatcher)
         return f"\n{'_'*60}\ni={image_i} | {image_i+1} of {self.n_disp} ({round((image_i/self.n_disp)*100, 1)}%) | scene_name:{scene_name}\n{dispatcher.image_path} | {ug.get_datetime()}"
-    
+
     def filter(self, condition):
         """
         Returns a list of dispatchers that meet the given condition.
@@ -108,14 +105,14 @@ class DispatcherCollection:
         List of Dispatcher objects.
         """
         return [d for d in self.dispatchers if condition(d)]
-    
+
     # specifc functions
     #########################################################################################
-        
+
     def get_dispatchers(self, SEG_CONFIG):
         """init dispatchers"""
         for i, image_path in enumerate(self.image_filepaths):
-            
+
             # if processing an image file with multiple scenes
             if image_path.endswith('.czi'):
                 czi = get_reader(image_path)
@@ -124,21 +121,31 @@ class DispatcherCollection:
                     self.add_dispatcher(image_path, SEG_CONFIG, scene_id, scene_name)
             else:
                 self.add_dispatcher(image_path, SEG_CONFIG, None, None)
-        
+
         # TODO peek at shapes - validate they are compatible with config
-                
+
         return self.dispatchers
-    
+
+
     def add_dispatcher(self, image_path, SEG_CONFIG, scene_id, scene_name, **kwargs):
+        
         image_i = self.get_n_disp()
         ex_md = init_ex_md(image_i, image_path, SEG_CONFIG, scene_id=scene_id, scene_name=scene_name)
         image_parser = ImageParser.create_parser(image_path, params=ex_md, load_kwargs={'scene_id': scene_id})
+        
         self.dispatchers.append(
-            Dispatcher(image_i=image_i, image_path=image_path, scene_id=scene_id, scene_name=scene_name, ex_md=ex_md, image_parser=image_parser)
+            Dispatcher(
+                image_i=image_i,
+                image_path=image_path,
+                scene_id=scene_id,
+                scene_name=scene_name,
+                ex_md=ex_md,
+                image_parser=image_parser,
+            )
         )
         self.n_disp += 1
-        
-        
+
+
 class Dispatcher:
     def __init__(self, **kwargs):
         self.image_i = None
@@ -169,9 +176,6 @@ class Dispatcher:
         if not self.t1:
             self.set_t1()
         return self.t1 - self.t0
-        
-        
-
 
 
 def check_skip_input_file(SEG_CONFIG, ex_md):
@@ -186,19 +190,6 @@ def check_skip_input_file(SEG_CONFIG, ex_md):
     if continue_flag: 
         print(f"skiping {Path(ex_md['image_path']).stem} because it is marked complete.")
     return continue_flag
-
-def update_example_metadata(ex_md, SEG_CONFIG):
-    """ Adjustments and additions to metadata for this specific example"""
-    pipeline_names = list(ex_md['segmentation_pipeline_config'].keys())
-    for pdn in pipeline_names:
-        ex_md['segmentation_pipeline_config'][pdn]['model_params']['output_dir'] = os.path.join(ex_md['output_dir'], pdn)
-        if pdn=='n2v':
-            if not ex_md['segmentation_pipeline_config']['n2v']['model_params'].get('multi_image', False):
-                ex_md['segmentation_pipeline_config']['n2v']['model_params']['N2V_MODEL_NAME_BASE'] += f"_{ex_md['example_i']}"
-        if not SEG_CONFIG.get('SHOW_FIGURES', True) and 'plotter' in ex_md['segmentation_pipeline_config'][pdn]['model_params']:
-            if ex_md['segmentation_pipeline_config'][pdn]['model_params']['plotter'] is not None:
-                ex_md['segmentation_pipeline_config'][pdn]['model_params']['plotter'].turn_off()
-        
 
 
 def maybe_log_run(SEG_CONFIG, dispatchers):
@@ -227,37 +218,6 @@ def maybe_log_run(SEG_CONFIG, dispatchers):
             
         except Exception as e:
             print(f'failed to write run config log. {e}')
-            
-
-def maybe_n2v_multi(SEG_CONFIG, disps: DispatcherCollection, pipeline: SegmentationPipeline):
-    """
-    # TODO: add support for training across multiple images
-    default behavior is to train a new model only if it doesn't exist
-    so if they do exist already, but you want to train a new one, need to specify use_existing = False in config
-    """
-    if 'n2v' not in SEG_CONFIG['MD_TEMPLATE']['segmentation_pipeline_config'] or pipeline is None:
-        return None
-    
-    _model_config = SEG_CONFIG['MD_TEMPLATE']['segmentation_pipeline_config']['n2v']['model_params']
-    config_ch_info = SEG_CONFIG['DATA_METADATA'].get('channel_info')
-    n2v_model = pipeline.get_model('n2v')
-    
-    if _model_config.get('multi_image', False) is True:
-        # check if models already exist - must be at least one model for each ch 
-        _has_models = len(n2v_model.found_ch_models) >= len(config_ch_info)
-        _dont_use_existing = (_model_config.get('use_existing') is False)
-        
-        # train new models for each channel
-        if not _has_models or _dont_use_existing:
-            ch_patches = n2v_model.ingest_images(disps)
-            n2v_model.train(ch_patches)
-    else:
-        raise ValueError('single model mode not configured yet.')
-
-    
-
-
-
 
 
 # individual example related functions
@@ -273,25 +233,25 @@ def init_ex_md(image_i, image_path, SEG_CONFIG, scene_id=None, scene_name=None) 
     
     # init params for processing this image
     ex_md = copy.deepcopy(SEG_CONFIG['MD_TEMPLATE'])
-    ex_md['COLOCALIZE_PARAMS'] = SEG_CONFIG.get('COLOCALIZE_PARAMS', None)
     ex_md['image_path'] = image_path
     ex_md['scene_id'] = scene_id
     ex_md['scene_name'] = scene_name
     ex_md['example_i'] = _example_i
     ex_md['output_dir'] = os.path.join(SEG_CONFIG['OUTPUT_DIR_EXAMPLES'], _example_i)
-    ex_md['channel_colormaps'] = SEG_CONFIG.get("THUMBNAIL_CMAPS_DEFAULT") or ['blue', 'green', 'red', 'magenta']
 
-    # add these attrs to ex_md
-    getattrs = ['take_dims', 'project_dims']
-    for a in getattrs:
-        ex_md[a] = SEG_CONFIG[a]
-    
-    
+    # add these optional attrs to ex_md
+    ex_md['channel_colormaps'] = SEG_CONFIG.get("THUMBNAIL_CMAPS_DEFAULT") or ['blue', 'green', 'red', 'magenta']
+    # these 3 are here for back compat
+    ex_md['COLOCALIZE_PARAMS'] = SEG_CONFIG.get('COLOCALIZE_PARAMS', None)
+    ex_md['take_dims'] = SEG_CONFIG.get('take_dims') or ''
+    ex_md['project_dims'] = SEG_CONFIG.get('project_dims') or ''
+        
     # save annoatation notes from previous run if they exist
     if not SEG_CONFIG['IS_NEW_RUN']:
         _ex_md = MetadataParser.try_get_metadata(ex_md['output_dir'], {'metadata':['metadata.yml']}, silent=True)
         if len(_ex_md)>0:
             ex_md['annotation_metadata'] = _ex_md['annotation_metadata']            
+            
     return ex_md
 
 def verify_input_parsed(img_parser, ex_md, SEG_CONFIG):
@@ -308,7 +268,7 @@ def verify_input_parsed(img_parser, ex_md, SEG_CONFIG):
         ug.verify_outputdir(SEG_CONFIG['OUTPUT_DIR_PROJ'])
         ug.verify_outputdir(SEG_CONFIG['OUTPUT_DIR_EXAMPLES'])
         ug.verify_outputdir(ex_md['output_dir'])
-    update_example_metadata(ex_md, SEG_CONFIG)
+    # update_example_metadata(ex_md, SEG_CONFIG)
 
     return True
 
@@ -316,9 +276,6 @@ def verify_input_parsed(img_parser, ex_md, SEG_CONFIG):
 def format_prediction_input(image_parser, image_obj, arr, ex_md, SEG_CONFIG):
     """slice array for expected input and arrange channels in wavelength order"""
     
-    ex_md['take_dims'] = ex_md.get('take_dims', '')
-    ex_md['project_dims'] = ex_md.get('project_dims', '')
-
     arr, arr_mip = image_parser.try_format_prediction_input(image_obj, arr, ex_md, SEG_CONFIG)
     
     # standardize the input to segmentation pipeline
@@ -326,90 +283,3 @@ def format_prediction_input(image_parser, image_obj, arr, ex_md, SEG_CONFIG):
     ex_md['current_format'] = "STCZYX" # update ex_md with the new format
     
     return arr, arr_mip
-
-
-
-# Optimization functions
-##############################################################################################################################################
-def tune_stardist_params(stardist_pipeline, img, CH=0, slice_obj=slice(None), scale_factors=[0.5, 0.75, 1.0, 1.25, 1.5, 2]):
-    """try differennt scale  factors  with/without using n2v model output for the predictions"""
-    assert any([isinstance(CH, t) for t in (int, list)]), f"CH must be int or list, got: {type(CH)}"
-    
-    # prepare input
-    sliced_img = img[slice_obj]
-    sd_input_img = np.moveaxis(sliced_img, -1,1)[:,:,np.newaxis,:,:] # input should be S,C,Z,Y,X
-    
-    # iterate prediction channels
-    for _CH in (CH if isinstance(CH, list) else [CH]):
-        imgs, tts  = [], []
-        pred_input_img = sd_input_img[:,_CH:_CH+1,:,:,:]
-
-        for sf in scale_factors:
-            sd_predictions = stardist_pipeline.run(# input should be S,C,Z,Y,X
-                pred_input_img,
-                pred_kwargs= dict(scale=sf)
-                                                )[0][:,0] # output is shape (1, Y, X)
-            imgs.append(
-                up.overlay(
-                    np.clip(pred_input_img[0, 0, 0, ...], 0, 1), 
-                    uip.mask_to_outlines(sd_predictions[0]), 'red', (255,0,0)))
-            tts.append(f"scale:  {sf}, n:{len(np.unique(sd_predictions[0])-1)}")
-        up.plot_image_grid(imgs, n_cols=3,  titles=tts)
-
-def tune_neurseg_prediction_threshold():
-    # TODO - need to reimplement this
-    pass
-
-def analyze_histogram(label_seg_input, plot=False):
-    import scipy.stats as stats
-    hist_peaks = []
-    nch = label_seg_input.shape[-1]
-    for i in range(nch):
-        data = label_seg_input[0,...,i].ravel()
-        # Generate the histogram
-        counts, bin_edges = np.histogram(data, bins=30)
-
-        # Find the index of the peak (bin with maximum count)
-        peak_index = np.argmax(counts)
-
-        # Find the corresponding bin center and peak value
-        bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
-        peak_value = bin_centers[peak_index]
-        peak_height = counts[peak_index]
-        peak_bin_width = bin_edges[peak_index + 1] - bin_edges[peak_index]
-
-        # Calculate skewness and kurtosis of the entire data
-        skewness = stats.skew(data)
-        kurtosis = stats.kurtosis(data)
-
-        # Calculate Full Width at Half Maximum (FWHM)
-        half_max = peak_height / 2
-        left_index = np.where(counts >= half_max)[0][0]  # First bin above half maximum
-        right_index = np.where(counts >= half_max)[0][-1]  # Last bin above half maximum
-        FWHM = bin_edges[right_index + 1] - bin_edges[left_index]
-                
-        if plot:
-            plot_histogram_stats(data, bin_edges, peak_value, FWHM, left_index, right_index)
-            # compile stats info
-            stats_summary = (
-                f"Peak value: {peak_value}\n"
-                f"Peak height: {peak_height}\n"
-                f"Peak bin width: {peak_bin_width}\n"
-                f"Skewness: {skewness}\n"
-                f"Kurtosis: {kurtosis}\n"
-                f"Full Width at Half Maximum (FWHM): {FWHM}"
-            )
-            print(stats_summary)
-        hist_peaks.append(peak_value+(FWHM/2))
-    return hist_peaks
-    
-def plot_histogram_stats(data, bin_edges, peak_value, FWHM, left_index, right_index):
-    # Plot the histogram
-    plt.hist(data, bins=30, edgecolor='black', alpha=0.7)
-    plt.axvline(peak_value, color='r', linestyle='--', label=f'Peak: {peak_value:.2f}')
-    plt.axvline(bin_edges[left_index], color='g', linestyle=':', label=f'FWHM: {FWHM:.2f}')
-    plt.axvline(bin_edges[right_index + 1], color='g', linestyle=':')
-    plt.legend()
-    plt.show()
-
-    

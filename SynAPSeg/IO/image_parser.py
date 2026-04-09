@@ -26,7 +26,7 @@ IMAGE_OBJECT_METADATA_TEMPLATE = {
 
 def fill_empty_metadata(found_metadata=None):
     """initalize or fill missing keys in metadata"""
-    found_metadata = {} if found_metadata is None else found_metadata
+    found_metadata = found_metadata or {}
     for k,v in IMAGE_OBJECT_METADATA_TEMPLATE.items():
         if k not in found_metadata.keys():
             found_metadata[k] = v
@@ -39,19 +39,41 @@ def update_format(current_format, removed_axes=''):
     return current_format
 
 
-
-
 def create_parser( 
                     file_path: str, 
                     params: Optional[dict]=None, 
                     load_kwargs: Optional[dict]=None
 ):
     """
-    Factory method to create the appropriate image parser
+    Factory call to create the appropriate image parser
         based on regex patterns that match the end of the file path.
     Args:
-        file_path:
-        params: TODO describe, consider changing to reflect its really config used in .run()
+        file_path: path to image file
+        
+        load_kwargs: parser specific load kwargs -> passed to parser.load_image()
+            - scene_name if multiscene file
+            
+        params: TODO consider refactoring, this is mix of run_config, example_metadata better to separate config args from metadata 
+            expects keys:
+                - data_metadata
+                    - input_image_format
+                    - channel_info
+                    
+            optional keys:
+                MIN_Z
+                VALID_SHAPE_T
+                VALID_SHAPE_S
+                SKIP_FORMAT_MISMATCHES
+
+            sets:
+                - current_format: output fmt, after running parser.validate_shape()
+                - image_metadata: created during image_parser.run(), has keys: 
+                    - init_image_format_target
+                    - 'ch_wavelengths': {},
+                    - 'zooms': None,
+                    - 'mag': None,
+                    - 'shape': None,
+                    - etc..
     TODO:
         make params optionally unless using in seg pipeline
     """
@@ -73,7 +95,7 @@ def create_parser(
         return parser_cls(file_path, params=params, load_kwargs=load_kwargs)
     except Exception as e:
         raise  ValueError (f"no suitable parser could be created based on image path: {file_path}") from e
-    
+
 
 class ImageParser(ABC):
     """
@@ -95,7 +117,7 @@ class ImageParser(ABC):
         self.error_msg = None
         self.metadata = None
         self.fatal_error = False
-    
+
     @classmethod
     def create_parser(cls,                              # keeping here for back-compat
                       file_path: str, 
@@ -112,25 +134,25 @@ class ImageParser(ABC):
             make params optional unless using in seg pipeline
         """
         return create_parser(file_path, params=params, load_kwargs=load_kwargs) 
-    
+
     def __str__(self):
         return pprint.pformat(vars(self))
-        
+
     @abstractmethod
     def load_image(self, load_kwargs: Optional[dict]=None):
         """Load the image from the source defined in parameters."""
         pass
 
     @abstractmethod
-    def extract_metadata(self, image_obj):
-        """Extract metadata specific to the image type."""
+    def extract_metadata(self, img_obj) -> dict:
+        """ Given image reader object as obj, define logic to extract metadata specific to the image type."""
         pass
 
     @abstractmethod
     def format_prediction_input(self, img_obj, arr, ex_md, RUN_CONFIG):
         """Preprocess arr to standardized format """
         pass
-    
+
     def maybe_input_arr_format_func(self, arr, ex_md):
         """
         allows passing a function in ex_md to reformat an array after it is read, before it is passed to prediction models
@@ -139,29 +161,6 @@ class ImageParser(ABC):
         if 'format_prediction_input_func' in ex_md:
             return ex_md['format_prediction_input_func'](arr, ex_md)
         return arr
-    
-    def _fill_empty_channel_info(self, arr_shape):
-        """ check if params data_metadata channel info is empty, if so fill with generic names for shape of C axis """
-        
-        if self.params['data_metadata']['channel_info'] is None:
-            nch = 1
-            if 'C' in self.params['data_metadata']['input_image_format']:
-                nch = arr_shape[self.params['data_metadata']['input_image_format'].index('C')]
-            
-            _chinfo = {i: f"channel_{i}" for i in range(nch)}
-            self.params['data_metadata']['channel_info'] = _chinfo
-
-
-    def handle_channel_info(self, arr_shape):
-        """
-        updates self.params['data_metadata']['channel_info'] if empty, parses channel info from filenames
-        """
-        # handle empty channel info 
-        self.params['data_metadata']['input_image_format'] = self.params['data_metadata']['input_image_format'].upper()
-        self._fill_empty_channel_info(arr_shape)
-        # check if need to pattern match ch names for channel info wls/names
-        self.params['data_metadata']['channel_info'] = process_channel_info(self.params['data_metadata']['channel_info'], Path(self.params['image_path']).name)
-
 
     def run(self):
         """
@@ -177,14 +176,14 @@ class ImageParser(ABC):
 
         self.params['image_metadata'] = fill_empty_metadata(self.extract_metadata(img_obj))   
         self.handle_channel_info(arr.shape)
-        
+
         if self.error_msg:
             return False, self.error_msg
-        else:
-            arr, checkShape, self.error_msg = self.validate_shape(arr) 
+
+        arr, checkShape, self.error_msg = self.validate_shape(arr) 
 
         return img_obj, arr, self.params
-    
+
     def try_load_image(self):
         """ attempt reading image object and fetching image array"""
         error_msg = None
@@ -194,30 +193,53 @@ class ImageParser(ABC):
             _emsg_base = f"error in load_image\nskipping {self.file_path}\nerror msg: "
             img_obj, arr, error_msg = None, None, f"{_emsg_base}{e}"
         return img_obj, arr, error_msg
-    
+
+
+    def handle_channel_info(self, arr_shape):
+        """
+        updates self.params['data_metadata']['channel_info'] if empty, parses channel info from filenames
+        """
+        
+        meta = self.params['data_metadata']   
+        meta['input_image_format'] = meta['input_image_format'].upper()
+        
+        # Retrieve or handle empty channel info
+        ch_info = meta['channel_info'] or self._fill_empty_channel_info(arr_shape, meta['input_image_format'])
+        
+        # check if need to pattern match ch names for channel info wls/names
+        filename = Path(self.file_path).name
+        meta['channel_info'] = process_channel_info(ch_info, filename)
+        
+    def _fill_empty_channel_info(self, arr_shape, inp_fmt):
+        """ fill channel info with generic names for each index along C axis """
+        idx = inp_fmt.find('C')
+        nch = arr_shape[idx] if idx != -1 else 1
+
+        return {i: f"channel_{i}" for i in range(nch)}
+
+
     def validate_shape(self, arr):
         """check arr shape matches expected/defined input"""
-        
+
         # whole section needs a rework, except for tranforming to target
         min_z = self.params.get('MIN_Z', None)
         valid_T = self.params.get('VALID_SHAPE_T', None)
         valid_S = self.params.get('VALID_SHAPE_S', None)
         skip_format_mismatches = self.params.get('SKIP_FORMAT_MISMATCHES', False)
         _emsg_base = f"error in validate_shape\nskipping {self.file_path}\nerror msg: "
-                
+
         try:
             # TODO: should try to estimate format if not provided!
-            print('input_image_format:', self.params['data_metadata']['input_image_format'])
-            print('init_image_format_target:', self.params['image_metadata']['init_image_format_target'])
-            arr = uip.transform_axes(
-                arr, 
-                self.params['data_metadata']['input_image_format'], 
-                self.params['image_metadata']['init_image_format_target']
-            )
-            self.params['current_format'] = self.params['image_metadata']['init_image_format_target']
+            inp_fmt = self.params['data_metadata']['input_image_format']
+            target_fmt = self.params['image_metadata']['init_image_format_target']
+            print('input_image_format:', inp_fmt)
+            print('init_image_format_target:', target_fmt)
+
+            arr = uip.transform_axes(arr, inp_fmt, target_fmt)
+            self.params['current_format'] = target_fmt
             print('transformed format (current_format):', self.params['current_format'])
             S, T, C, Z, Y, X = arr.shape
-            
+
             # valid_shape = (T == valid_T and S == valid_S and Z >= min_z)
             valid_shape = all([
                 (T >= valid_T) if valid_T is not None else True,
@@ -226,39 +248,37 @@ class ImageParser(ABC):
             ])
             if not valid_shape and skip_format_mismatches:
                 return arr, False, f"{_emsg_base}Invalid constraints: given format:{self.params['current_format']} and T={valid_T}, S={valid_S}, Z>={min_z} << but got shape: {arr.shape}. skipping..."
-            
+
             return arr, True, None
         except ValueError as e:
             if skip_format_mismatches:
                 return None, False, f"{_emsg_base}Shape mismatch (S, T, C, Z, Y, X != arr.shape), skipping.."
             raise ValueError(e)
 
-    
     def try_format_prediction_input(self, img_obj, arr, ex_md, RUN_CONFIG):
         """ apply common elements to arr formating"""
         # reduce specified dimensions
         arr = uip.reduce_dimensions(arr, ex_md['current_format'], take_dims=ex_md['take_dims']) # used to be arr[0,0]
         ex_md['current_format'] = update_format(ex_md['current_format'], removed_axes=ex_md['take_dims'])
 
-        # reorder channels 
+        # reorder channels
         arr = self.format_prediction_input(img_obj, arr, ex_md, RUN_CONFIG)
-        
-        # potentially fill missing channels if know mapping from C inds to expectations    
-        
+
+        # potentially fill missing channels if know mapping from C inds to expectations
+
         if RUN_CONFIG['MD_TEMPLATE']['data_metadata']['channel_info']:
             d = process_channel_info(RUN_CONFIG['MD_TEMPLATE']['data_metadata']['channel_info'], Path(ex_md['image_path']).name)
         else: # feed back in present channels if not known
             # ?? this confuses me why above uses run_config and below uses ex_md
-            # TODO: also implement a default way that maps channel inds to general names (e.g. ch0 -> Synaptopodin)
+            # TODO: also implement a default way that maps channel inds to general names (e.g. ch0 -> Synaptophysin)
             # note: this may need to be created outside of this function to handle cases where n ch differs.
             d = process_channel_info(ex_md['data_metadata']['channel_info'], Path(ex_md['image_path']).name)
         exp_inds = {i:k for i,k in enumerate(sorted(d.keys()))}
-        
+
         ch_axis = ex_md['current_format'].index('C')
         ex_md['data_metadata']['present_chs'] = list(range(arr.shape[ch_axis]))
         ex_md['data_metadata']['inserted_null_chs'] = None
-        
-        
+
         if RUN_CONFIG.get('COERCE_SHAPE', True) and (len(exp_inds) != len(ex_md['data_metadata']['present_chs'])) and len(ex_md['data_metadata']['channel_info'])>0: # must be czi
             print(ex_md['data_metadata'])
             # check if more channels in image than specified (remove channels)
@@ -274,13 +294,13 @@ class ImageParser(ABC):
 
                 ch_names = [el[0] for el in present_ordered_ch_info if el[1] in get_these_wls_real]
                 get_these_ch_inds = [present_ordered_chs.index(wl) for wl in get_these_wls_real]
-                
+
                 # update array and metadata
                 ch_axis = ex_md['current_format'].index('C')
                 arr = np.take(arr, get_these_ch_inds, ch_axis) # only take the channels that matched to the specified wavelengths
                 ex_md['data_metadata']['present_chs'] = list(range(arr.shape[ch_axis]))
                 ex_md['data_metadata']['inserted_null_chs'] = None
-                
+
             else:
                 # check if less channels in image (add empty arrays)
                 expected_wl = ast.literal_eval(ex_md['image_metadata']['ch_wavelengths']) # since it comes as str, need to convert to dict
@@ -291,22 +311,18 @@ class ImageParser(ABC):
                     ex_md['data_metadata']['inserted_null_chs'] = maybe_missing_inds
                     ex_md['data_metadata']['present_chs'] = [i for i in exp_inds if i not in maybe_missing_inds]
 
-                    # TODO this needs to be tested 
+                    # TODO this needs to be tested
                     arr2 = arr.copy()
                     for i in maybe_missing_inds:
                         mpty = np.zeros_like(np.take(arr, indices=slice(0, 1), axis=ch_axis)) # new 3/18
                         arr2 = np.insert(arr2, i, mpty, axis=ch_axis)
                         # arr2 = np.insert(arr2, i, np.zeros_like(arr[0:1, ...]), axis=ch_axis) # replaced 3/18
                     arr = arr2
-        
+
         mip_project_dims = "".join([d for d in ex_md['current_format'] if d not in 'CXY']) # project all dims except CXY when creating the mip
         arr_mip = uip.reduce_dimensions(arr, ex_md['current_format'], project_dims=mip_project_dims)
         uip.print_array_info(arr)
         return arr, arr_mip
-
-        
-        
-
 
 
 class IMSImageParser(ImageParser):
@@ -320,12 +336,11 @@ class IMSImageParser(ImageParser):
         arr = imsFile[:]
         return imsFile, arr
     
-    def extract_metadata(self, imsFile):
+    def extract_metadata(self, img_obj) -> dict:
         return {}
 
     def format_prediction_input(self, img_obj, arr, ex_md, RUN_CONFIG):
         return self.maybe_input_arr_format_func(arr, ex_md)
-        
 
 
 class TIFFImageParser(ImageParser):
@@ -337,7 +352,7 @@ class TIFFImageParser(ImageParser):
         import tifffile
         im = tifffile.imread(self.file_path)
         return None, im
-    def extract_metadata(self, im):
+    def extract_metadata(self, img_obj) -> dict:
         return {}
     def format_prediction_input(self, img_obj, arr, ex_md, RUN_CONFIG):
         return self.maybe_input_arr_format_func(arr, ex_md)
@@ -351,12 +366,10 @@ class GeneralImageParser(ImageParser):
         import imageio
         im = imageio.v2.imread(self.file_path)
         return None, im
-    def extract_metadata(self, im):
+    def extract_metadata(self, img_obj) -> dict:
         return {}
     def format_prediction_input(self, img_obj, arr, ex_md, RUN_CONFIG):
         return self.maybe_input_arr_format_func(arr, ex_md)
-
-
 
 
 def _has_bioformats() -> bool:
@@ -366,7 +379,7 @@ def _has_bioformats() -> bool:
         return True
     except ImportError:
         return False
-        
+
 def _determine_general_parser() -> type[ImageParser]:
     """determine which general parser to use based on bioformats_jar availability"""
     if _has_bioformats():
@@ -379,8 +392,6 @@ def get_aics_reader():
         from aicsimageio.readers import BioformatsReader
         return BioformatsReader
     return None
-    
-
 
 
 class CZIImageParser(ImageParser):
@@ -422,7 +433,7 @@ class CZIImageParser(ImageParser):
         return czi, arr
         
         
-    def extract_metadata(self, czi):
+    def extract_metadata(self, img_obj) -> dict:
         metadata = {}
         for n, f in {
             'ch_wavelengths': uCzi.get_czi_ch_wavelengths,
@@ -432,7 +443,7 @@ class CZIImageParser(ImageParser):
             'shape': lambda x: x.shape,
         }.items():
             try:
-                res = f(czi)
+                res = f(img_obj)
                 metadata[n] = str(res) #if not isinstance(res, dict) else res # convert to str unless its a dictionary
             except:
                 metadata[n] = None
@@ -483,7 +494,7 @@ class AICSImageParser(ImageParser):
         return img_obj, image_data
     
 
-    def extract_metadata(self, img_obj):
+    def extract_metadata(self, img_obj) -> dict:
         
         # md = img_obj.metadata
         
@@ -504,7 +515,8 @@ class AICSImageParser(ImageParser):
                 metadata[n] = res #if not isinstance(res, dict) else res # convert to str unless its a dictionary
             except:
                 metadata[n] = None
-        return metadata
+                
+        return fill_empty_metadata(metadata)
         
     def get_scaling(self, img_obj):
         scaling = {}
@@ -611,29 +623,32 @@ class AICSImageParser(ImageParser):
         arr = self.arrange_channels(img_obj, arr, channel_axis=ex_md['current_format'].index('C'))
         arr = self.maybe_input_arr_format_func(arr, ex_md)
         return arr
-    
-
-
 
 
 # TODO: not invoked, does this need to be used anywhere?
-class ImageConfigInterpreter:
-    def __init__(self, config: Dict[str, Any], run_config: Optional[Dict[str, Any]] = None):
-        self.config = config
-        self.run_config = run_config or {}
-
-    def resolve(self, image_path: str, arr_shape: tuple) -> Dict[str, Any]:
-        resolved = self.config.copy()
-        data_md = resolved.setdefault("data_metadata", {})
-
-        fmt = data_md.get("input_image_format", "STCZYX").upper()
+class ExConfigInterpreter:
+    def __init__(self, SEG_CONFIG: Dict[str, Any]):
+        """ 
+        interface class that ingests global seg config and sets up metadata for each example instance 
+        """
+        self.SEG_CONFIG = SEG_CONFIG
+    
+        
+    def resolve_data_metadata(self, data_md:dict, image_path: str, arr_shape: tuple, input_image_format: Optional[str]) -> Dict[str, Any]:
+        """ fetch/setup metadata relevant to a single input image (aka 'example') """
+        
+        resolved = data_md.copy()
+        
+        if input_image_format:
+            fmt = input_image_format.upper()
+        else:
+            fmt = uip.estimate_format(arr_shape)
         data_md["input_image_format"] = fmt
-
+        
+        
+        # if channel_info not provided set to default names, will always be 1 channel 
         if data_md.get("channel_info") is None:
-            nch = 1
-            if "C" in fmt:
-                c_index = fmt.index("C")
-                nch = arr_shape[c_index]
+            nch = 1 if "C" not in fmt else arr_shape[fmt.index("C")]
             data_md["channel_info"] = {i: f"channel_{i}" for i in range(nch)}
 
         data_md["channel_info"] = process_channel_info(
@@ -642,30 +657,43 @@ class ImageConfigInterpreter:
 
         return resolved
 
-    def init_ex_md(self, image_i, image_path, scene_id=None, scene_name=None) -> dict:
-        image_i = Path(image_path).stem if image_i is None else image_i
-        assert isinstance(image_i, (int, str))
-        _example_i = str(image_i).zfill(4) if isinstance(image_i, int) else image_i
-
-        ex_md = copy.deepcopy(self.run_config['MD_TEMPLATE'])
-        ex_md['COLOCALIZE_PARAMS'] = self.run_config.get('COLOCALIZE_PARAMS', None)
+    def init_ex_md(self, image_path, ex_dirname=None, scene_id=None, scene_name=None) -> dict:
+        
+        # this becomes name of the ex's directory
+        if ex_dirname is None:
+            ex_dirname = Path(image_path).stem
+        elif isinstance(ex_dirname, int):
+            ex_dirname = str(ex_dirname).zfill(4)
+        if not isinstance(ex_dirname, str):
+            raise ValueError(f"ex_dirname must be str, int, or None but got: `{ex_dirname}`") 
+        
+        ex_md = copy.deepcopy(self.SEG_CONFIG['MD_TEMPLATE'])
+        
         ex_md['image_path'] = image_path
         ex_md['scene_id'] = scene_id
         ex_md['scene_name'] = scene_name
-        ex_md['example_i'] = _example_i
-        ex_md['output_dir'] = os.path.join(self.run_config['OUTPUT_DIR_EXAMPLES'], _example_i)
+        ex_md['example_i'] = ex_dirname
+        ex_md['output_dir'] = os.path.join(self.SEG_CONFIG['OUTPUT_DIR_EXAMPLES'], ex_dirname)
 
-        for a in ['take_dims', 'project_dims']:
-            ex_md[a] = self.run_config[a]
-
-
+        
         # this should be moved to the metadata handler
-        if not self.run_config['IS_NEW_RUN']:
+        # save annoatation notes from previous run if they exist
+        if not self.SEG_CONFIG.get('IS_NEW_RUN'):
             _ex_md = MetadataParser.try_get_metadata(ex_md['output_dir'], {'metadata': ['metadata.yml']}, silent=True)
             if len(_ex_md) > 0:
                 ex_md['annotation_metadata'] = _ex_md['annotation_metadata']
 
         return ex_md
+
+    def _normalize_params(self, ex_md):
+        """Run this once when params are first loaded"""
+                
+        # add these optional attrs to ex_md
+        ex_md['channel_colormaps'] = self.SEG_CONFIG.get("THUMBNAIL_CMAPS_DEFAULT") or ['blue', 'green', 'red', 'magenta']
+        # these 3 are here for back compat
+        ex_md['COLOCALIZE_PARAMS'] = self.SEG_CONFIG.get('COLOCALIZE_PARAMS', None)
+        ex_md['take_dims'] = self.SEG_CONFIG.get('take_dims') or ''
+        ex_md['project_dims'] = self.SEG_CONFIG.get('project_dims') or ''
 
 
 
@@ -711,6 +739,3 @@ if __name__ == '__main__' and bool(0):
 
     arr = parser.arrange_channels(img_obj, image_data, channel_axis=ex_md['format'].index('C'))
     up.show_ch(arr[0], axis=0)
-    
-    
-    

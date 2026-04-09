@@ -244,12 +244,6 @@ DATA_METADATA:
 
 MD_TEMPLATE:
   default_value: {}
-    # data_metadata: "${DATA_METADATA}"
-    # image_path: null
-    # image_metadata: {}
-    # annotation_metadata: {'notes':'', 'status':''}
-    # COLOCALIZE_PARAMS: {'colocalizations': []}
-    # segmentation_pipeline_config: {}
   widget_type: dict
   tooltip: "Initialized during building of config"
   heading: Data

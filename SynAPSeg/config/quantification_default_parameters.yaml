@@ -40,6 +40,75 @@ EXCLUDE_EXAMPLES:
   heading: General Project Settings
   flags: ["hidden"]
 
+  
+# EXTRACTION PARAMETERS:
+PIPELINE_STAGE_NAMES:
+  # widget_type: SegConfigModelsField
+  default_value: null
+  widget_type: list
+  # widget_type: multi-selection
+  # value_options: ['ROIHandlingStage', 'ObjectDetectionStage', 'ColocalizationStage']
+  tooltip: List of names of stages in pipeline. This should be set automatically.
+  heading: General Project Settings
+  flags: ["hidden"]
+  
+FILE_MAP:
+  default_value:
+    images: []
+    labels: []
+    annotations: []
+    ROIS: []
+    metadata: []
+  widget_type: dict
+  tooltip: Files to be parsed from each example's directory. type=dict[str, list[str]] though can be empty lists
+  heading: General Project Settings
+  flags: ["hidden"]
+INTENSITY_IMAGE_NAME:
+  default_value: null
+  widget_type: str
+  tooltip: Name of image used for intensity measurements. e.g. `mip_raw.tiff`
+  heading: General Project Settings
+OBJECTS_IMAGE_NAME:
+  default_value: null
+  widget_type: str
+  tooltip: Name of image used for object (label) extraction. e.g. `pred_Stardist.tiff`
+  heading: General Project Settings
+ROIS_NAME:
+  default_value: null
+  widget_type: str
+  tooltip: Name of file (image or geojson) for ROI extraction. e.g. `ROI_0.tiff`
+  heading: General Project Settings
+PX_SIZE_XY:
+  default_value: null
+  widget_type: float
+  tooltip: "Define size in micrometers (\u03BCm) for Y,X dimensions. Looks in each example's metadata for value if none. If not found or provided defaults to 1."
+  heading: General Project Settings
+PX_SIZE_Z:
+  default_value: null
+  widget_type: float
+  tooltip: "Define size in micrometers (\u03BCm) for Z dimension. Looks in each example's metadata for value if none. If not found or provided defaults to 1."
+  heading: General Project Settings
+PX_SIZES_UNIT:
+  default_value: 'm'
+  widget_type: selection
+  value_options: ['m', 'mm', 'um', 'nm']
+  tooltip: "Unit of px scaling in example's image metadata. Default is meters (CZI file convention). This is ignored if setting px_size_XY or Z above - those are always assumed to be microns (um)."
+  heading: General Project Settings
+
+GET_CHS:
+  default_value: null
+  widget_type: list
+  tooltip: Extract objects from these channels only. by default, all channels are used.
+  heading: General Project Settings
+  flags: ["hidden"]
+
+ALLOW_RAW_PREDS:
+  default_value: true
+  widget_type: bool
+  tooltip: If false, only use annotated predictions.
+  heading: General Project Settings
+  flags: ["hidden"]
+
 
 # OUTPUT CONFIGURATION:
 WRITE_OUTPUT:
@@ -60,71 +129,6 @@ CACHE_INTERMEDIATE_RESULTS:
   widget_type: bool
   tooltip: Whether to store outputs for each example in temp dir then compile, helpful if run gets interupted.
   heading: General Project Settings
-
-  
-# EXTRACTION PARAMETERS:
-PIPELINE_STAGE_NAMES:
-  # widget_type: SegConfigModelsField
-  default_value: null
-  widget_type: list
-  # widget_type: multi-selection
-  # value_options: ['ROIHandlingStage', 'ObjectDetectionStage', 'ColocalizationStage']
-  tooltip: List of names of stages in pipeline. This should be set automatically.
-  heading: Extraction Parameters
-  flags: ["hidden"]
-  
-FILE_MAP:
-  default_value:
-    images: []
-    labels: []
-    annotations: []
-    ROIS: []
-    metadata: []
-  widget_type: dict
-  tooltip: Files to be parsed from each example's directory. type=dict[str, list[str]] though can be empty lists
-  heading: Extraction Parameters
-  flags: ["hidden"]
-INTENSITY_IMAGE_NAME:
-  default_value: null
-  widget_type: str
-  tooltip: Name of image used for intensity measurements. e.g. `mip_raw.tiff`
-  heading: Extraction Parameters
-OBJECTS_IMAGE_NAME:
-  default_value: null
-  widget_type: str
-  tooltip: Name of image used for object (label) extraction. e.g. `pred_Stardist.tiff`
-  heading: Extraction Parameters
-ROIS_NAME:
-  default_value: null
-  widget_type: str
-  tooltip: Name of file (image or geojson) for ROI extraction. e.g. `ROI_0.tiff`
-  heading: Extraction Parameters
-PX_SIZE_XY:
-  default_value: null
-  widget_type: float
-  tooltip: "Define size in micrometers (\u03BCm) for Y,X dimensions. Looks in each example's metadata for value if none. If not found or provided defaults to 1."
-  heading: Extraction Parameters
-PX_SIZE_Z:
-  default_value: null
-  widget_type: float
-  tooltip: "Define size in micrometers (\u03BCm) for Z dimension. Looks in each example's metadata for value if none. If not found or provided defaults to 1."
-  heading: Extraction Parameters
-GET_CHS:
-  default_value: null
-  widget_type: list
-  tooltip: Extract objects from these channels only. by default, all channels are used.
-  heading: Extraction Parameters
-  flags: ["hidden"]
-
-ALLOW_RAW_PREDS:
-  default_value: true
-  widget_type: bool
-  tooltip: If false, only use annotated predictions.
-  heading: Extraction Parameters
-  flags: ["hidden"]
-
-
-
 
 
 EXTRACT_GROUPS:

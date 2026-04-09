@@ -36,7 +36,6 @@ from SynAPSeg.Segmentation.Processing import (
     check_skip_input_file,
     format_prediction_input,
     maybe_log_run,
-    maybe_n2v_multi,
     DispatcherCollection,
 )
 from SynAPSeg.Segmentation.config_parser import ConfigParser, interpret_run_config
@@ -74,11 +73,12 @@ def main(
 
     # Config
     ####################################################################################
-    if CONFIG_KEY is not None: # default implementation when invoking from script
-        # SEG_CONFIG = BaseConfig(config_key=PROJECT_NAME, config_path=constants.SEG_CONFIG_PATH, default_parameters_path=constants.SEG_DEFAULT_PARAMETERS_PATH)
+    # default implementation when invoking from script
+    if CONFIG_KEY is not None:
         SEG_CONFIG = interpret_run_config(CONFIG_KEY)
-    else:
-        SEG_CONFIG = BaseConfig(None, None, default_parameters_path=constants.SEG_DEFAULT_PARAMETERS_PATH, params=built_config) # when passing config from the gui
+    
+    else: # when passing config from the gui
+        SEG_CONFIG = BaseConfig(None, None, default_parameters_path=constants.SEG_DEFAULT_PARAMETERS_PATH, params=built_config)
 
     # parse config and set attributes for creating dispatchers: file_paths, models, etc.
     SEG_CONFIG = ConfigParser(SEG_CONFIG).get_config()
@@ -87,33 +87,30 @@ def main(
     #############################################
     dispatchers = DispatcherCollection(SEG_CONFIG)
     pipeline = segpipe.build_segmentation_pipeline(SEG_CONFIG)
-    maybe_n2v_multi(SEG_CONFIG, dispatchers, pipeline)
-        
+            
     _disp_slice = slice(*disp_i_slice)
     for disp in dispatchers[_disp_slice]:     
         print(dispatchers.get_progress(disp))
         
+        # Define the 'slice' of the progress bar for THIS specific image
+        # If we have 4 images, Image 1 owns 0-25%, Image 2 owns 25-50%, etc.
+        start_pct = int((disp.image_i / dispatchers.n_disp) * 100)
+        end_pct = int(((disp.image_i + 1) / dispatchers.n_disp) * 100)
+        
         if progress_callback:
-            # Define the 'slice' of the progress bar for THIS specific image
-            # If we have 4 images, Image 1 owns 0-25%, Image 2 owns 25-50%, etc.
-            start_pct = int((disp.image_i / dispatchers.n_disp) * 100)
-            end_pct = int(((disp.image_i + 1) / dispatchers.n_disp) * 100)
-
             # Create a "Sub-Callback" that translates 0-100% within the pipeline
             # into the start_pct -> end_pct range on the real UI bar.
             pipe_cb = SubProgress(progress_callback, start_pct, end_pct)
 
-            # 1. Loading phase (First 10% of this item's slice)
-            pipe_cb(0, f"Loading {disp.image_i}...")
         else:
-            pipe_cb = None
+            # pipe_cb = None
+            pipe_cb = SubProgress(lambda *args: None, start_pct, end_pct)  # dummy callback 
+        
+        # 1. Loading phase (First 10% of this item's slice)
+        pipe_cb(0, f"Loading {disp.image_i}...")
 
         # load and init
         #########################################################################################
-        # if SEG_CONFIG['USE_EXISTING']: # TODO modify so use existing reads from existing example dir 
-        # - this requries larger change in dispatcher
-            
-        # else:
         # fetch parameters for input image and get input image parser to handle this type of image
         image_parser = disp.get_image_parser()
         img_obj, arr, ex_md = disp.image_parser.run()
@@ -204,8 +201,8 @@ if __name__ == '__main__':
     disp_i_slice = (None, None)
  
     # run
-    config_keys = [
-        # '2026_0108_synapseg_supFig1',
+    config_keys = [ 
+        '2026_0108_synapseg_supFig1',
     ]
 
     for CONFIG_KEY in config_keys:
@@ -213,5 +210,3 @@ if __name__ == '__main__':
 
         main(CONFIG_KEY=CONFIG_KEY, built_config=None, disp_i_slice=disp_i_slice)
 
-
-   

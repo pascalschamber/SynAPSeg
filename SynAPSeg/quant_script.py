@@ -89,7 +89,6 @@ def main(config_key, config_path=None, default_parameters_path=None, dispatchers
    
     # optionally add formatting information for data arrays
     ###########################################################
-    # TODO: this could be added to UI
     # proj.batch_attach_data([{'key':'ROI_0', 'data_formats':'YX'}])
     
     # option to set a custom filter to fetch specific examples 

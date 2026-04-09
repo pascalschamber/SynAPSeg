@@ -569,6 +569,9 @@ class PyramidOMEReader:
         -------
         np.ndarray
         """
+        if level < 0: # handle negative indicies e.g. -1 returns last level 
+            level = self.num_levels + level
+            
         if not (0 <= level < self.num_levels):
             raise IndexError(f"Level {level} out of range (0..{self.num_levels-1}).")
 
