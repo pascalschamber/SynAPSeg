@@ -33,7 +33,7 @@ def verify_paths_exist(listOfPaths):
 
 def get_prefix(
         s:str, 
-        exceptions:Optional[List[str]] = ['.ome']
+        exceptions:Optional[List[str]] = ['.ome', '.OME']
     ) -> str:
     """
         Find the last occurrence of '.' returning string up to that point or returns input if not found
@@ -54,9 +54,9 @@ def get_prefix(
     # check for expections - cases where suffix has mulitple .'s
     if exceptions:
         for exp in exceptions:
-            if exp in out:
-                out = out.replace(exp, '')
-
+            if out.endswith(exp):
+                out = out[:out.rfind(exp)]
+                
     return out
     
     
