@@ -1,6 +1,7 @@
 import os
 import tifffile
 import struct
+from pathlib import Path
 
 
 def write_array(arr, outdir, output_name, fmt=None, ex_md=None, tiff_metadata=None, OUTPUT_IMAGE_PYRAMID=False):
@@ -93,8 +94,8 @@ def write_array(arr, outdir, output_name, fmt=None, ex_md=None, tiff_metadata=No
             tifffile.imwrite(outpath, arr, bigtiff=True, **_kwargs)
     
     # add metadata
-    ex_md['data_metadata']['data_shapes'][output_name] = list(arr.shape)
-    ex_md['data_metadata']['data_formats'][output_name] = fmt
+    ex_md['data_metadata']['data_shapes'][Path(outpath).name] = list(arr.shape)
+    ex_md['data_metadata']['data_formats'][Path(outpath).name] = fmt
 
 
 
