@@ -49,6 +49,7 @@ from SynAPSeg.utils import utils_general as ug
 from SynAPSeg.config import constants
 
 
+
 if TYPE_CHECKING:
     from SynAPSeg.IO.metadata_handler import MetadataParser
 
@@ -206,8 +207,10 @@ class Example:
             self.log(f"Error marking complete: {e}", lvl='error')
             raise
     
-    def write_metadata(self) -> None:
+    def write_metadata(self, archive_previous=False) -> None:
         """ write the current example.exmd (metadata) to disk, overwrites existing version """
+        if archive_previous:
+            self.get_metadata_parser().archive_metadata(self.path_to_example, error_on_fail=False)
         self.get_metadata_parser().write_metadata(self.path_to_example, self.exmd)
     
     def write_data(self, data, filename, fmt, tiff_metadata=None, OUTPUT_IMAGE_PYRAMID=False):
@@ -304,17 +307,74 @@ class Example:
         ex_contents = ex_contents or self.get_filenames()
         ann_fns = [c for c in ex_contents if any([c.startswith(pre) for pre in ann_fn_prefixes])]
         return ann_fns
+    
+    def load_image_data(self, fn, collapse=True, silent=False):
+        """ load tiff array and format from ex's directory """
+        from SynAPSeg.utils.utils_image_processing import read_img, pai
+        p = self.get_path(fn)
+        fmt = self.get_current_format(fn)
+        a, fmt = read_img(p, fmt=fmt, collapse=collapse)
+        if not silent: print(f'{fn} <{fmt}> {pai(a,1)}')
+        return a, fmt
+
+    def get_md_fmts(self):
+        """ returns data formats from examples metadata """
+        return self.exmd['data_metadata']['data_formats']
+
+    # this should replaced below >>> 
+    def get_current_format(self, key:str, verbose=True) -> str:
+        """
+        Helper to get the current format of a data object via lookup in exmd or via shape inference.
+        """
         
+        dfmts = self.get_md_fmts()
+        existing_key = self._check_key_exists(dfmts, key) 
+        
+        if existing_key is not None:
+            return self.exmd['data_metadata']['data_formats'][existing_key]
+        else:
+            from SynAPSeg.utils.utils_image_processing import estimate_format, get_tiff_shape
+
+            # tiff path -> shape | ignore data shape in exmd since it could be out of data. 
+            # We should treat as just a convience for viewing all shapes easily, but always do the look up. #TODO likely some code needs to be refactored re this.
+            # assume reading from disk is always correct, since we only handle tiffs/imgs here this is okay 
+            # but to support other data types where shape might be less reliably inferred from disk, should take from metadata
+            if verbose: print(f"warning - format for {key} not found in metadata.")
+            shape = get_tiff_shape(file_path=self.get_path(key)) 
+            # self.exmd['data_metadata']['data_shapes'].get(key)
+
+            if verbose: print(f"\tattempting to infer format from shape: {shape}")
+            est_fmt = estimate_format(
+                shape, 
+                default_format=constants.STANDARD_FORMAT, 
+                channel_max=constants.CHANNEL_MAX
+            )
+            if verbose: print(f"\tgot inferred format: {est_fmt}")
+            return est_fmt
+
+    def _check_filename_exists(self, filename:str):
+        return filename in self.get_filenames()
+
+    def _check_key_exists(self, d:dict[str,str], key) -> Optional[str]:
+        """ return key if it exists in d, else return key prefix if that exists in d, else None """
+        if key in d.keys():
+            return key
+        if ug.get_prefix(key) in d.keys(): # backcompatibility for v1 keys without suffix, e.g. 'raw_img' instead of 'raw_img.tiff'
+            return ug.get_prefix(key)
+        return None
+
+    # this should be deprecated by above <<<
     def has_data(self, data_key:str):
         """ 
         returns true if the key points to a filename that exists in the example 
             TODO only supports keys with filenames sans suffix, future should support if suffix is included
         """
         return self._prefix_in_ex_files(data_key)
-    
+       
     def _prefix_in_ex_files(self, data_key:str):
-            return data_key in [ug.get_prefix(el) for el in self.get_filenames()]
+        return data_key in [ug.get_prefix(el) for el in self.get_filenames()]
         
+
     def get_base_shape_mapping(self, raw_img_format='STCZYX') -> Dict[str, int]:
         """
         Extract base shape mapping from existing metadata
@@ -357,12 +417,18 @@ class Example:
             
             qparams = BaseConfig(conf_key, conf_path, default_params_path)
             
-            coloc_stage_name = 'colocalization'
-            if 'colocalization' not in qparams['STAGE_PARAMS'].keys():
+            
+            if 'COLOCALIZATIONS' in qparams.keys(): # old format
+                colocalizations = qparams['COLOCALIZATIONS']
+            
+            elif 'colocalization' in qparams['STAGE_PARAMS'].keys():
+                colocalizations = qparams['STAGE_PARAMS']['colocalization']['COLOCALIZATIONS'] # new format
+            
+            else:
                 raise ValueError('config file does not have a colocalization stage associated.')
             
             # colocalizations = qparams['COLOCALIZATIONS'] # old format
-            colocalizations = qparams['STAGE_PARAMS']['colocalization']['COLOCALIZATIONS'] # new format
+            
                            
 
         self.exmd.update({'COLOCALIZE_PARAMS':{"colocalizations":colocalizations}})
@@ -678,13 +744,19 @@ class Project:
         examples = [Example(el) for el in exdirs if Example.is_ex_dir(el)]
         return examples
     
-    def get_output_dir(self, most_recent=True, name=None, idx=None):
-        """ gets the path to the most recently created output direction, or if name is provided (TODO)"""
+    def output_dirs(self) -> list[str]:
+        """ returns a list of directories in the outputs folder """
         OUTPUTS_BASE_DIR = ug.verify_outputdir(self.path_to_outputs)
         output_folders = ug.get_contents(OUTPUTS_BASE_DIR)
+        return output_folders
+    
+    def get_output_dir(self, most_recent=True, name=None, idx=None):
+        """ gets the path to the most recently created output direction, or if name is provided (TODO)"""
+        
+        output_folders = self.output_dirs()
 
         if isinstance(name, str):
-            output_dir = os.path.join(OUTPUTS_BASE_DIR, name)
+            output_dir = os.path.join(self.path_to_outputs, name)
         elif isinstance(idx, int):
             output_dir = output_folders[idx]
         elif most_recent:
@@ -696,11 +768,14 @@ class Project:
         assert os.path.exists(output_dir), f"could not find directory: {output_dir}"
         return output_dir
 
-    def get_example(self, name: str) -> Example | None:
+    def get_example(self, name: str|int) -> Example | None:
         """ 
         get an example by name e.g. '0000' 
             note: name='auto' is special case which returns result of self.get_next_example
         """
+        if isinstance(name, int): 
+            name = str(name).zfill(4)
+            
         if name.lower() == 'auto': 
             name = self.get_next_example()
             if name is None:
@@ -771,7 +846,7 @@ class Project:
                 data_name = entry['key']
 
                 for k in upd_keys:
-                    if not ex.has_data(data_name): 
+                    if not ex._check_filename_exists(data_name): 
                         continue
 
                     # help get array shape if not provided
@@ -1051,7 +1126,7 @@ class Project:
             FILEMAP: dict mapping 
         
         TODO:
-            fix status=COMPLETE to auto set even if mapping not provide
+            fix status=COMPLETE to auto set even if mapping not provided
         """
         progress = self.get_dir_progress(self, FILE_MAP)
         info_df = progress[0]
@@ -1140,6 +1215,65 @@ class Project:
         examples = examples or self.examples
         return set(ug.flatten_list([ex.get_filenames(pattern=pattern, fail_on_empty=False) for ex in examples]))
     
+    def get_px_scaling(self) -> dict[str, float]:
+        """ 
+        returns a dictionary mapping each dimension in 'ZYX' to its pixel/voxel scaling factor
+        raises ValueError if scaling is not consistent across all examples
+        """
+        all_scaling = {dim:[] for dim in 'ZYX'}
+        for ex in self.examples:
+            scaling = ex.get_px_scaling()
+            for dim in 'ZYX':
+                all_scaling[dim].append(scaling[dim])
+        errors = []
+        for dim in 'ZYX':
+            if len(set(all_scaling[dim]))!=1:
+                errors.append(f"{dim} scaling factors: {all_scaling[dim]}")
+            else:
+                all_scaling[dim] = all_scaling[dim][0]
+        if errors:
+            emsg = '\n'.join(errors)
+            raise ValueError(f"Scaling is not consistent across all examples for dimensions:\n{emsg}\n")
+        
+        return all_scaling
+    
+
+# VERSION COMPATIBILITY FUNCTIONS # 
+def upgrade_metadata_keys_to_v2(ex:Example):
+    """
+    update metadata to replace old metadata keys (just file stem) to v2 keys which also have extension. 
+    only updates tiff files
+    """
+    # ensure we only modify tiff files by checking if exists in ex dir
+    ex_filenames = ex.get_filenames()
+    keep_keys = []
+    del_keys = []
+    non_tiff_keys = []
+    updated_key_map = {} # old -> new
+    dfks = ex.exmd['data_metadata']['data_formats']
+    for key, _fmt in dfks.items():
+        
+        if key.endswith(('.tiff', '.tif')):
+            keep_keys.append(key)
+            updated_key_map[key] = key
+        else:
+            new_key =key+'.tiff' if key+'.tiff' in ex_filenames else key+'.tif' if key+'.tif' in ex_filenames else None
+
+            if new_key is None: # not a real tiff file.
+                non_tiff_keys.append(key) 
+                updated_key_map[key] = key
+                continue
+
+            if new_key not in dfks.keys():
+                keep_keys.append(key)
+                updated_key_map[key] = new_key
+            else:
+                del_keys.append(key)
+    
+    dfks = {updated_key_map[k]:v for k,v in dfks.items() if k in (keep_keys+non_tiff_keys)}
+    ex.exmd['data_metadata']['data_formats'] = dfks
+    dsks = {updated_key_map[k]:v for k,v in ex.exmd['data_metadata']['data_shapes'].items() if k in (keep_keys+non_tiff_keys)}
+    ex.exmd['data_metadata']['data_shapes'] = dsks
 
 if bool(0):
     # compile index of examples with specific scaling values over several projects
