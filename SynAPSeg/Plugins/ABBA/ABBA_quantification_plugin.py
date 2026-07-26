@@ -13,7 +13,7 @@ from copy import deepcopy
 
 from SynAPSeg.Quantification.BasePipelineStage import BasePipelineStage
 
-    
+   
 __plugin_group__ = 'quantification'
 __plugin__ = 'ABBAQuantificationPlugin'
 __parameters__ = 'ABBA_quantification_plugin.yaml'
@@ -55,6 +55,7 @@ class ABBAQuantificationPlugin(BasePipelineStage):
         ####################################################################################
         stage_config = self.get_stage_config(config, __stage_key__)
         
+        GEOJSON_RELATIVE_PATH = stage_config.get('GEOJSON_RELATIVE_PATH') or "**/*.geojson"
         STRUCTS_PATH = stage_config["STRUCTS_PATH"]
         ROIS_NAME = stage_config['ROIS_NAME']
         HANDLE_ROI_TYPE = stage_config.get('HANDLE_ROI_TYPE') or 'exclude'
@@ -71,26 +72,31 @@ class ABBAQuantificationPlugin(BasePipelineStage):
         ####################################################################################
         self.logger.debug('loading ontology...')
         
-        # TODO make this a user-adjustable setting
-        stage_config["GEOJSON_PATH"] = os.path.join(
-            path_to_example, 
-            "qupath", "qupath_export_geojson", 
-            f"{Path(config['INTENSITY_IMAGE_NAME']).stem.replace('.ome','')}.geojson"
-        )
+        
+        # load atlas ontology structures
+        if not os.path.exists(stage_config["STRUCTS_PATH"]):
+            raise ValueError(f"path to ontology structures does not exist at: {stage_config['STRUCTS_PATH']}")
+        elif STRUCTS_PATH.endswith('.csv'):
+            structs_base = pd.read_csv(STRUCTS_PATH) 
+        elif STRUCTS_PATH.endswith('.json'):             # e.g. "Adult Mouse Brain - Allen Brain Atlas V3p1-Ontology.json"
+            structs_base = STRUCTS_PATH 
+        else:
+            raise ValueError(f"invalid structs path: {STRUCTS_PATH}")
+            
+        ont = arhfs.Ontology(structs_base)
+
+        # load registration 
+        # relative path is user-adjustable
+        stage_config["GEOJSON_PATH"] = ug.resolve_pattern_path(path_to_example, GEOJSON_RELATIVE_PATH, strict=True)
 
         if not os.path.exists(stage_config["GEOJSON_PATH"]):
             raise ValueError(f"path to registration does not exist at: {stage_config['GEOJSON_PATH']}")
         
-        if not os.path.exists(stage_config["STRUCTS_PATH"]):
-            raise ValueError(f"path to ontology structures does not exist at: {stage_config['STRUCTS_PATH']}")
-        
-        # load atlas ontology and registration
-        ont = arhfs.Ontology(pd.read_csv(STRUCTS_PATH))
-
         regionPolys = rp.polyCollection(
             stage_config["GEOJSON_PATH"], 
             ont=ont
         )
+                
                 
         # ROI handling
         ######################################################################################################

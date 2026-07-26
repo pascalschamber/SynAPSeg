@@ -187,7 +187,7 @@ def constrain_region_area_by_rois(region_polys, roi_regionPolys, um_per_pixel:fl
             regpoly = ageojsonPoly.to_shapely()
 
             # two different? methods of getting area, seem to be largely similar??
-            regpoly_c = regpoly.intersection(roipoly) # TODO make sure polygon holes and multi polys are handled
+            regpoly_c = regpoly.intersection(roipoly)
 
             roi_i = aroipoly.reg_id
 
@@ -205,12 +205,21 @@ def constrain_region_area_by_rois(region_polys, roi_regionPolys, um_per_pixel:fl
                 region_area_mm = pixel_to_mm(regpoly_c.area, pixel_size_in_microns=um_per_pixel),
                 # itx_polyObj = regpoly_c,
             ))
-            
+
             # convert itx shapely poly back to geojson poly
             constrained_gjp = None
             if regpoly_c.area > 0:
-                constrained_gjp = from_shapely(regpoly_c, obj_i=ageojsonPoly.obj_i, reg_id=ageojsonPoly.reg_id,  region_name=ageojsonPoly.region_name, reg_side=ageojsonPoly.reg_side, st_level=ageojsonPoly.st_level, acronym=ageojsonPoly.acronym, roi_i=roi_i)
-            
+                constrained_gjp = from_shapely(
+                    regpoly_c,
+                    obj_i=ageojsonPoly.obj_i,
+                    reg_id=ageojsonPoly.reg_id,
+                    region_name=ageojsonPoly.region_name,
+                    reg_side=ageojsonPoly.reg_side,
+                    st_level=ageojsonPoly.st_level,
+                    acronym=ageojsonPoly.acronym,
+                    roi_i=roi_i,
+                )
+
             _constrained_regionPolys[roi_i].append(constrained_gjp) # TODO need to create geojson poly from this constrained poly
 
     roi_poly_df = pd.DataFrame(roi_poly_df)
@@ -219,12 +228,12 @@ def constrain_region_area_by_rois(region_polys, roi_regionPolys, um_per_pixel:fl
     constrained_regionPolys = {}
     for _roi_i, _cgjp_list in _constrained_regionPolys.items():
         filtered_gjps = [el for el in _cgjp_list if el is not None] or None
-        
+
         if filtered_gjps is not None:
             _filtered_gjps = polyCollection()
             _filtered_gjps.add_polys(filtered_gjps)
             filtered_gjps = _filtered_gjps
-        
+
         constrained_regionPolys[_roi_i] = filtered_gjps
 
     return roi_poly_df, constrained_regionPolys
@@ -299,13 +308,12 @@ class polyCollection:
         MINX, MAXX, MINY, MAXY = bounds[:, 0].min(), bounds[:, 1].max(), bounds[:, 2].min(), bounds[:, 3].max()
         
         if no_ax: 
-            # ax.set_xlim(MINX, MAXX)
-            # ax.set_ylim(MINY, MAXY)
             ax.relim()
             ax.autoscale_view()
             plt.show()
         else:
-            return np.array((MINX, MAXX, MINY, MAXY))
+            # return bounds
+            return np.array((MINX, MAXX, MINY, MAXY)) 
     
     def to_matplotlib_patches(self, geojsonPoly_list, values, cmap=plt.cm.coolwarm, patch_kwargs={}, patchCollection_kwargs={'edgecolors':'k', 'linestyles':'--'}):
         """ convert a list of geojsonPolys to matplotlib patch objects 
@@ -343,6 +351,22 @@ class polyCollection:
         if not isinstance(indices, tuple):
             indices = tuple(indices)
         return [self.polygons[i] for i in indices]
+    
+    def filter(self, condition) -> 'polyCollection':
+        """ 
+        filter polycollection returning new collection using conditional function 
+        
+        args:
+            condition: function that takes a geojsonPoly as input and returns bool
+        
+        Returns:
+            new polyCollection
+        """
+        
+        filtered_polys = [p for p in self.polygons if condition(p)]
+        new_polyColl = polyCollection()
+        new_polyColl.add_polys(filtered_polys)
+        return new_polyColl
 
 
 class geojsonPoly:
@@ -650,7 +674,7 @@ class geojsonPoly:
         no_ax = False
         if ax is None:
             no_ax = True
-            fig,ax = plt.subplots()
+            fig, ax = plt.subplots()
 
         bounds = []
         for i in range(len(exts)):
@@ -754,7 +778,7 @@ def roi_feature_to_polygon(roi_feature: Dict) -> shapelyPolygon:
         raise ValueError("ROI polygon is empty after parsing.")
     return p
 
-def shapely_to_geojson(geom, properties: Dict | None = None) -> Dict:
+def shapely_to_geojson(geom, properties: dict | None = None) -> dict:
     """
     Wrap a Shapely geometry as a GeoJSON Feature.
         Note: for compatibility with geojsonPoly, properties must include measurements key
@@ -768,13 +792,17 @@ def shapely_to_geojson(geom, properties: Dict | None = None) -> Dict:
 def from_shapely(_shapelyPolygon, obj_i:Optional[int]=None, reg_id:Optional[int]=None, region_name:Optional[str]=None, reg_side:Optional[str]=None, st_level:Optional[int]=None, acronym:Optional[str]=None, roi_i:Optional[int]=None, **attrs) -> geojsonPoly:
     """ convert a shapely polygon object to a geojson poly object """
     geojsonFeatureElement = shapely_to_geojson(_shapelyPolygon)
-    
-    # geojsonFeatureElement = get_empty_geojson_feature() # old method
-    # geojsonFeatureElement['geometry']['type'] = shapelyPolygon.__geo_interface__['type']
-    # geojsonFeatureElement['geometry']['coordinates'] = shapelyPolygon.__geo_interface__['coordinates']
 
     return geojsonPoly(
-        geojsonFeatureElement, obj_i=obj_i, reg_id=reg_id,  region_name=region_name, reg_side=reg_side, st_level=st_level, acronym=acronym, roi_i=roi_i, **attrs
+        geojsonFeatureElement,
+        obj_i=obj_i,
+        reg_id=reg_id,
+        region_name=region_name,
+        reg_side=reg_side,
+        st_level=st_level,
+        acronym=acronym,
+        roi_i=roi_i,
+        **attrs,
     )
 
 # handling parsing napari shapes
@@ -946,7 +974,7 @@ def extract_polyregions(geojson_objs, ont):
     for obj_i, anobj in enumerate(geojson_objs):
         print_str = ""
 
-        aPoly = regionPoly(obj_i=obj_i, anobj=anobj, st_level=get_st_lvl_from_regid(anobj['properties']['measurements']['ID'], ont))
+        aPoly = geojsonPoly(obj_i=obj_i, anobj=anobj, st_level=get_st_lvl_from_regid(anobj['properties']['measurements']['ID'], ont))
         aPoly.region_name = ont.ont_ids[aPoly.obj_id]['name'] if aPoly.obj_id != 997 else 'root'
 
         coord_arrs, num_poly_coords = get_coordinates(anobj)
@@ -985,7 +1013,7 @@ def separate_polytypes(polyObjs):
         - multies: ListType[ListType[ListType[array(float64, 2d, C)]]], 
         - poly info: list[dict[Any]] returned by polyObj.to_dict()
     """
-    # get regionPoly objects as dicts and sort by st_lvl
+    # get geojsonPoly objects as dicts and sort by st_lvl
     polyObj_dicts = sorted([apoly.to_dict() for apoly in polyObjs], key=lambda x: x['st_level'], reverse=True) 
     
     # gather numba capatible outer list and info for each poly
@@ -1012,217 +1040,6 @@ def get_coordinates(aFeature):
     return coord_arrs, num_poly_coords
 
 
-class regionPoly:
-    """
-        TODO: DEPRECATED  ????
-
-        object to hold a collection of polys so know the following:
-            regions to extract or ignore
-            area
-            numba compatible, so can return list of polys (in order so it can be proc'd in order)
-        polygon coords are stored in a dict where keys are interally used poly indices (in order)
-            value is a dict: 
-                arr: np.ndarray, 
-                polytype: main_poly, exteriors, interiors
-        there are three types of polys in qupath abba annotatins
-            a region ('exteriors')
-            a multipolygon with regions to exclude ('main')
-            those regions to exclude from this main polygon ('interiors')
-        Interface with nuclei localization
-            this is the order based on what we can infer from the different types of polygons
-                doing it this way avoids potential issue when checking multipolys first where it could be in excluded region
-                and also in a later non-multipoly
-            check against non-multipolys, if inside can be sure not going to be excluded
-            then, check multipolys, if inside and not in excluded areas we're good
-    ARGS
-        GO_FAST (bool): if true skip superfoulous calculations (debugging)
-    """
-
-    def __init__(self, obj_i, anobj, st_level, GO_FAST=True):
-        self.valid_polytypes = ['main', 'exteriors', 'interiors']
-        self.count_polytypes = None # used for debugging
-        self.obj_i = obj_i # this is index of polygon collection in geojson file (i.e. poly_index)
-        self.st_level = st_level
-        self.region_area = None
-        self.region_extent = None # store bounding box coordinates
-        self.poly_count = 0
-        self.poly_arrays = {} # store polys here
-        self.GO_FAST = GO_FAST
-        self.ingest_obj(anobj)
-
-
-    def ingest_obj(self, anobj):
-        self.anobj = anobj # might want to not store to conserve memory if possible
-        self.region_name = None
-        self.obj_id = anobj['properties']['measurements']['ID']  # this is id of region in ontology
-        # self.obj_names = ', '.join(anobj['properties']['classification']['names'])
-        obj_names = anobj['properties']['classification']['names']
-        self.reg_side = str(obj_names[0])
-        self.acronym = str(obj_names[1])
-        self.geometry_type = anobj['geometry']['type']
-
-    def __str__(self):
-        prt_str = ''
-        get_attrs = ['obj_id', 'acronym', 'reg_side', '', 'region_name',  '', 'geometry_type','', 'region_area']
-        for attr in get_attrs:
-            if len(attr) == 0: prt_str+='\n'
-            else: prt_str += f"{attr}: {getattr(self, attr)} "
-        return prt_str+'\n'
-    
-    def add_poly(self, poly_arr, polyType):
-        if polyType not in self.valid_polytypes: 
-            raise ValueError(f'polyType ({polyType}) must be one of {self.valid_polytypes}')
-        assert self.poly_count not in self.poly_arrays, f"key ({self.poly_count}) should not already exist"
-
-        # add poly to dict
-        self.poly_arrays[self.poly_count] = {'arr':poly_arr, 'polyType':polyType}
-        self.poly_count += 1
-        
-    def unpack_feature_polygons(self, coord_arrs):
-        # store exteriors and interiors, where exteriors are regions to include, and interiors are regions to exclude
-        # store shapes for debugging
-        self.ragged_shapes = []
-        error = None
-        self.print_str = ""
-        self.numba_format = [] # list of dicts, where dict includes indicies to include/ exclude for each coord array
-        
-        try:
-            for arr_i, arr in enumerate(coord_arrs):
-                nb_dict = {'include':None, 'exclude':None}
-                if arr.ndim == 3: # array of shape e.g. (1, 2, nPoints)
-                    if arr.shape[0]>1: raise ValueError(f"{arr.shape} is not handled")
-                    for v_idx in range(arr.shape[0]): # but could handle it if implemented here
-                        valid_arr = arr[v_idx]
-                        assert valid_arr.ndim ==2, f"{valid_arr.shape} is not 2d"
-                        if arr_i == 0: # handle case where only a single poly
-                            self.add_poly(valid_arr, 'main')
-                        else:
-                            self.add_poly(valid_arr, 'exteriors')
-                        nb_dict['include'] = valid_arr
-                        
-                elif arr.ndim == 1: # handle ragged arrays 
-                    unpacked_arrs = [np.array(el) for el in arr]
-                    self.ragged_shapes.append(f"{arr.shape} --> {[a.shape for a in unpacked_arrs]}")
-                    
-                    # check_all_2dim
-                    unpacked_shapes = [el.shape for el in unpacked_arrs]
-                    assert all([len(el)==2 for el in unpacked_shapes]), f"{unpacked_shapes} contains non 2d arrays"
-                    nb_dict['exclude'] = []
-                    # split into main body and interiors
-                    for i, el in enumerate(unpacked_arrs):
-                        if i == 0:
-                            self.add_poly(el, 'main')
-                            nb_dict['include'] = el
-                        else:
-                            self.add_poly(el, 'interiors')
-                            nb_dict['exclude'].append(el)
-                else: 
-                    raise ValueError(f'this should not happen, arr ndim: {arr.ndim}')
-                self.numba_format.append(nb_dict)
-            
-
-            self.print_str += f"{self.obj_i} ({self.geometry_type}) --> n: {len(coord_arrs)}\n"
-            for astr in self.ragged_shapes:
-                self.print_str += f"\tragged arr: {astr}\n"
-            
-        except Exception as e:
-            error = e
-
-        finally: # append additional info
-            for arr in coord_arrs:
-                self.print_str += f'{arr.shape}'
-                for ca_i, ca in enumerate(coord_arrs):
-                    if ca.ndim == 1:
-                        for el in ca:
-                            self.print_str += f'\t {np.array(el).shape}'
-        
-        return error
-    
-    def prepare_numba_input(self, polygonCollection):
-        # where polygonCollection is a list of dict with keys for include and exclude 
-        # and include is an array and  exclude is list of coord arrays
-        nb_include, nb_exclude = [], []
-        for d in polygonCollection:
-            exclude = nb.typed.numbaList(d['exclude']) if d['exclude'] is not None else None
-            nb_include.append(d['include']), nb_exclude.append(exclude)
-        return nb.typed.numbaList(nb_include), nb.typed.numbaList(nb_exclude)
-
-    def extract_info(self):
-        self.region_area = self.get_total_area(self.poly_arrays)
-        self.region_extent = self.get_region_extent(self.poly_arrays)
-        self.all_obj_atlas_coords = self.get_atlas_coords(self.anobj) # NEW 2023_0808, not required
-        if not self.GO_FAST:
-            self.get_count_polytypes()
-    
-
-    def get_count_polytypes(self):
-        # count num polys of each type, for plotting/debuging
-        self.count_polytypes = dict(zip(self.valid_polytypes, [0]*len(self.valid_polytypes)))
-        for pi, p_arr in self.poly_arrays.items():
-            polyType = p_arr['polyType']
-            self.count_polytypes[polyType]+=1
-            
-    def get_total_area(self, poly_arrays):
-        # get area of regions to include minus areas to exclude
-        total_area = 0
-        for poly_i, poly_dict in poly_arrays.items():
-            area = polygon_area(poly_dict['arr']) 
-            area *= -1 if poly_dict['polyType'] == 'interiors' else 1
-            total_area += area
-        return total_area
-    
-    def get_region_extent(self, poly_arrays):
-        """get bounding box of all polygons comprising this region - returns minimum_x, minimum_y, maximum_x, maximum_y """
-        return list(get_polygons_extent([pd['arr'] for pd in poly_arrays.values()]))
-    
-    def get_atlas_coords(self, geojson_obj):
-        # extracts the atlas coords for each region from geojson file if present
-        atlas_coords_not_found = 0 # store number of coords not found
-        atlas_measurements_keys = ['Atlas_X', 'Atlas_Y', 'Atlas_Z']
-        obj_output = []
-        measurements = geojson_obj['properties']['measurements']
-        for coord_key in atlas_measurements_keys:
-            if coord_key not in measurements: # check atlas coords exist
-                atlas_coords_not_found += 1
-                obj_output.append(None)
-            else:
-                obj_output.append(measurements[coord_key])
-        if not self.GO_FAST:
-            if atlas_coords_not_found > 0: print(f'WARN --> atlas coords not extracted (num: {atlas_coords_not_found})', flush=True)
-        return obj_output
-    
-    def to_dict(self):
-        # helper function for numba processing, prepares the polygons and extract info needed for centroid df
-        polyObj_dict = {
-            'poly_index':self.obj_i, 
-            'reg_id':self.obj_id, 
-            'st_level':self.st_level,
-            'region_name':self.region_name,
-            'reg_side':self.reg_side,
-            'acronym':self.acronym,
-            'region_area':self.region_area,
-            'singles':[], 'multis':[]}
-        for coord_dict in self.numba_format:
-            if coord_dict['exclude'] is not None:
-                polyObj_dict['multis'].append(numbaList([coord_dict['include']] + [a for a in coord_dict['exclude']]))
-            else:
-                polyObj_dict['singles'].append(coord_dict['include'])
-        
-        polyObj_dict['singles'] = get_empty_single_nb() if len(polyObj_dict['singles']) == 0 else numbaList(polyObj_dict['singles'])
-        polyObj_dict['multis'] = get_empty_multi_nb() if len(polyObj_dict['multis']) == 0 else numbaList(polyObj_dict['multis'])
-        return polyObj_dict
-    
-    def to_region_df_row(self):
-        # helper function to convert object to a dict that is compatible with a pandas dataframe
-        # note that previously 'region_polygons' were only the first region, now that there are multiple it cannot be used the same way
-            # so new implementations that need these coordinate arrays should access them through .numba_format
-        atx, aty, atz = self.all_obj_atlas_coords if len(self.all_obj_atlas_coords)==3 else [np.nan]*3
-        row_dict = dict(zip(
-            ['poly_index', 'region_ids', 'acronym', 'region_name', 'region_sides', 'region_areas', 'region_extents', 'atlas_x', 'atlas_y', 'atlas_z'],
-            [self.obj_i, self.obj_id, self.acronym, self.region_name, self.reg_side, self.region_area, self.region_extent, atx, aty, atz]
-        ))
-        return row_dict
-
 # general utils
 ##############################################
 def print_obj(geojson_obj):
@@ -1244,10 +1061,10 @@ def print_obj(geojson_obj):
     print(prt_str)
 
 
-def polygon_area(region_poly):
+def polygon_area(coords):
     ''' Calculates the area of a complex polygon using the shoelace formula. Calculates signed area, so abs is taken to get the actual area '''
-    assert region_poly.shape[1] == 2 and region_poly.ndim==2, f'error --> region poly shape {region_poly.shape}'
-    Xs, Ys = region_poly[:,1], region_poly[:,0]
+    assert coords.shape[1] == 2 and coords.ndim==2, f'error --> coords shape {coords.shape}'
+    Xs, Ys = coords[:,1], coords[:,0]
     area = 0.5 * abs(sum(Xs[i]*(Ys[i+1]-Ys[i-1]) for i in range(1, len(Xs)-1)) + Xs[0]*(Ys[1]-Ys[-1]) + Xs[-1]*(Ys[0]-Ys[-2]))
     return area
 
@@ -1303,7 +1120,7 @@ def plot_polygons(apoly, plot_points=None, fig_title=None, show_legend=True, inv
         x_min, x_max = minimum_x-pad, maximum_x+pad
         y_min, y_max = minimum_y-pad, maximum_y+pad
     else: # support for passing a single array of coordinates too
-        if isinstance(apoly, regionPoly):
+        if isinstance(apoly, geojsonPoly):
             minimum_x, minimum_y, maximum_x, maximum_y = get_polygons_extent([pd['arr'] for pd in apoly.poly_arrays.values()])
         elif isinstance(apoly, np.ndarray):
             minimum_x, minimum_y, maximum_x, maximum_y = get_polygons_extent([apoly])
@@ -1346,7 +1163,7 @@ def plot_polygons(apoly, plot_points=None, fig_title=None, show_legend=True, inv
         palette2 = {'exteriors':yellow_rgba, 'main': yellow_rgba, 'interiors':(1.0, 0.0, 0.0, 0.5)}
         palette2_fc = {'exteriors':blue_rgba, 'main': green_rgba, 'interiors':red_rgba}
         
-        to_add = apoly.poly_arrays if isinstance(apoly, regionPoly) else poly_dict
+        to_add = apoly.poly_arrays if isinstance(apoly, geojsonPoly) else poly_dict
         for pi, pd in to_add.items():
             arr, ptype = pd['arr'], pd['polyType']
             ec, fc = palette2[ptype], palette2_fc[ptype]
