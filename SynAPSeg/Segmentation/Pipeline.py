@@ -34,7 +34,7 @@ class SegmentationPipeline:
         self.models = []        # List of tuples: (model_name, model_instance)
         self.model_names = set() # Set of str 
         self.connections = {}   # Dictionary: source_model_name -> [target_model_names]
-        self.data_state ={} #  holds meta data for the current run, gets passed to models
+        self.data_state = {} #  holds meta data for the current run, gets passed to models
         
         # add models and connections
         for m in models:
@@ -155,12 +155,10 @@ class SegmentationPipeline:
                 # of whichever model produced it. If it's the first model,
                 # we assume the user-provided data is already in the correct format.
                 
-                # For demonstration, we simply assume no transformation is needed
-                # for the first model. For subsequent models, we transform from the
-                # previous model's output dims to the current model's input dims.
-                # That logic can be improved by storing the actual previous model's
-                # output dims. Here we make a simplifying assumption.
-
+                # Assume no transformation is needed for the first model. 
+                # For subsequent models, we transform from the previous model's output dims 
+                # to the current model's input dims.
+                
                 transformed_input_data = intermediate_data[model_name]
 
                 # 2. Run the model
@@ -195,7 +193,7 @@ class SegmentationPipeline:
                             intermediate_data[target_model_name] += transformed_output_data
         
         if progress_callback:
-            progress_callback(100, "Pipeline run complete")
+            progress_callback(99, "Pipeline run complete")
             
         if return_model_inputs:
             return outputs, {k:v for k,v in intermediate_data.items() if v is not None}

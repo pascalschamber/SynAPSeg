@@ -25,6 +25,7 @@ def write_output(
         ex_md, arr, predictions, pipeline, RUN_CONFIG, image_obj, skip_arr_names=None, 
         generate_summary=True, generate_mip=True, 
         overwrite_raw_img=True,
+        squeeze=False,
     ):
     """ Main function to write output images, metadata, and create thumbnail.
     """
@@ -53,6 +54,7 @@ def write_output(
         generate_mip=generate_mip,
         OUTPUT_IMAGE_PYRAMID=OUTPUT_IMAGE_PYRAMID,
         overwrite_raw_img=overwrite_raw_img,
+        squeeze=squeeze,
     )
 
 
@@ -248,6 +250,7 @@ def save_previous_segmentation_results(output_dir):
 
 def save_images_and_metadata(ex_md, arr, predictions, mip_thumbnail=None, output_dir='', skip_files_str=None, generate_mip=True, OUTPUT_IMAGE_PYRAMID=False,
     overwrite_raw_img = True,
+    squeeze = False,
     ):
     """
     Save generated images and metadata to disk.
@@ -267,7 +270,8 @@ def save_images_and_metadata(ex_md, arr, predictions, mip_thumbnail=None, output
         outarr = arr if _ISRAW else predictions[output_base_name]
 
         if _ISRAW and not overwrite_raw_img:
-            if os.path.exists(os.path.join(output_dir, 'raw_img.tiff')):
+            try_fns = ['raw_img.tiff', 'raw_img.ome.tiff', 'raw_image.ome.tiff']
+            if any([os.path.exists(os.path.join(output_dir, tfn)) for tfn in try_fns]):
                 continue
 
         if (skip_files_str is not None and skip_files_str in output_name) or outarr is None:
@@ -284,7 +288,12 @@ def save_images_and_metadata(ex_md, arr, predictions, mip_thumbnail=None, output
             # print('in save_images_and_metadata:', output_base_name, a_i, subarr.shape)
             i_list = "" if n_items==1 else f"_i{a_i}"
             output_name = f"{is_pred}{output_base_name}{i_list}"
-            write_array(subarr, output_dir, output_name, _STANDARD_FORMAT, ex_md, OUTPUT_IMAGE_PYRAMID=(OUTPUT_IMAGE_PYRAMID and _ISRAW))
+            
+            if squeeze:
+                subarr, _fmt = uip.collapse_singleton_dims(subarr, _STANDARD_FORMAT)
+                write_array(subarr, output_dir, output_name, _fmt, ex_md, OUTPUT_IMAGE_PYRAMID=(OUTPUT_IMAGE_PYRAMID and _ISRAW))
+            else:
+                write_array(subarr, output_dir, output_name, _STANDARD_FORMAT, ex_md, OUTPUT_IMAGE_PYRAMID=(OUTPUT_IMAGE_PYRAMID and _ISRAW))
             
             # save a mip of raw_img, reducing any singleton dimensions as well - point is to make image easy to view in e.g. imagej
             if generate_mip and _ISRAW:
