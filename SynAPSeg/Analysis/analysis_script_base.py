@@ -15,6 +15,7 @@ import scipy.stats
 from scipy.stats import mannwhitneyu
 import numpy as np
 import pingouin as pg
+from copy import deepcopy
 
 from SynAPSeg.utils import utils_general as ug
 from SynAPSeg.utils import utils_plotting as up
@@ -26,11 +27,118 @@ from SynAPSeg.IO.project import Project, Example
 from SynAPSeg.IO.env import verify_and_set_env_dirs
 from SynAPSeg.utils import utils_stats
 from SynAPSeg.Analysis import df_utils
-from SynAPSeg.Plugins.ABBA import ABBAv2_core_compile as Compile
+from SynAPSeg.Analysis.rpdf_filter import region_prop_table_filter, format_threshold_dict, get_colocal_id_counts
 import SynAPSeg.Analysis.NeighborhoodAnalysis as NNA
 
 
 
+
+def apply_thresholds(rpdfs, threshold_dict, filtered_counts, inclusive=True):
+    all_colocal_ids = sorted(list(rpdfs['colocal_id'].unique()))
+    rpdfs_filtered = []
+    for colocal_id in all_colocal_ids:
+        cdf = rpdfs.loc[rpdfs["colocal_id"] == colocal_id]
+        if colocal_id in threshold_dict.keys():
+            # apply filtering
+            cdf, rp_filtercounts = region_prop_table_filter(cdf, threshold_dict[colocal_id], inclusive=inclusive)
+            
+            # append filtered counts
+            for k,v in rp_filtercounts.items():
+                if k not in filtered_counts:
+                    filtered_counts[k] = dict(zip(all_colocal_ids, [np.nan]*len(all_colocal_ids)))
+                filtered_counts[k][colocal_id] = v
+
+        rpdfs_filtered.append(cdf)
+    rpdfs_filtered = pd.concat(rpdfs_filtered)
+    return rpdfs_filtered, filtered_counts
+
+def _parse_threshold_dict_input(thresholds_by_colocal):
+    """parse thresholds so intersection percentage is handled separately to enable downgrading colocalizations"""
+    threshold_dict, threshold_itx_dict = {}, {}
+    _copy = deepcopy(thresholds_by_colocal)
+    for clc_id, tdict in _copy.items():
+        if 'intersection_percent' in tdict:
+            threshold_itx_dict[clc_id] = {'intersection_percent': tdict.pop('intersection_percent')}
+        threshold_dict[clc_id] = tdict
+    return threshold_dict, threshold_itx_dict
+
+def filter_dataframe(rpdfs, thresholds_by_colocal, base_colocal_id_map, clc2itx_map, THRESHOLD, ch2clc_map, GROUPPING_COLS):
+    """ Get the filtered DataFrame"""
+
+    # parse thresholds so intersection percentage is handled separately to enable downgrading colocalizations
+    all_colocal_ids = sorted(list(rpdfs['colocal_id'].unique()))
+    thresholds_by_colocal = format_threshold_dict(deepcopy(thresholds_by_colocal), all_colocal_ids)
+    thresholds_by_colocal = {int(k):v for k,v in thresholds_by_colocal.items()}
+    threshold_dict, threshold_itx_dict = _parse_threshold_dict_input(thresholds_by_colocal)
+    
+    
+    # precount = rpdfs['colocal_id'].value_counts().to_frame().rename(columns={'count':'pre-filter'}) # previous included by batch filters rpdfs.groupby('batch')
+    filtered_counts = {"init": get_colocal_id_counts(rpdfs, all_colocal_ids), "final": None}
+
+    # apply thresholds    
+    rpdfs, filtered_counts = apply_thresholds(rpdfs, threshold_dict, filtered_counts)
+    
+    # apply colocalization threshold
+    ################################
+    # TODO apply clc specific thresholds, for now just uses global itx threshold 
+    itx_cols = [c for c in rpdfs.columns if c.endswith('_intersecting_label')]
+    colocalized_ids = list(base_colocal_id_map.keys())
+    downgrade_indexes = []
+    for dfn, adf in rpdfs.groupby([c for c in GROUPPING_COLS if c not in ['colocal_id', 'roi_i']]):
+        for clc_id in colocalized_ids:
+            cdf = adf[adf['colocal_id']==clc_id]
+            base_id, itx_id = base_colocal_id_map[clc_id], clc2itx_map[clc_id]
+            
+            itx_ids = [itx_id] if not isinstance(itx_id, list) else itx_id
+            for itx_id in itx_ids:
+                itx_label_col = f"ch{itx_id}_intersecting_label"
+                other_clc_ids_itx = [k for k in base_colocal_id_map if base_colocal_id_map[k]==itx_id]
+                all_itx_ids = other_clc_ids_itx + [itx_id]
+                present_itx_labels = adf.query(f'colocal_id.isin({all_itx_ids})')['label'].values
+                downgrade_inds = cdf[~cdf[itx_label_col].isin(present_itx_labels)].index
+                downgrade_indexes.extend(downgrade_inds)
+
+    # Apply the mapping and thresholding
+    def downgrade_colocal_id(row):
+        if row['colocal_id'] in base_colocal_id_map and ((row['intersection_percent'] < THRESHOLD) or (row.name in downgrade_indexes)):
+            return base_colocal_id_map[row['colocal_id']]
+        return row['colocal_id']
+
+    rpdfs['colocal_id'] = rpdfs.apply(downgrade_colocal_id, axis=1)
+
+    # reset cols for downgraded colocalization
+    base_colocal_ids = list(ch2clc_map.keys())
+    inds = rpdfs[rpdfs['colocal_id'].isin(base_colocal_ids)].index
+
+    pc = rpdfs.columns
+    coloc_prop_cols = ug.filter_by_regex(pc, r'^clc\d*_', match_type='match')
+    reset_cols = ['intersection_percent'] + [c for c in pc if c.endswith('_intersecting_label')] + coloc_prop_cols
+    rpdfs.loc[inds, reset_cols] = np.nan
+
+    # postcount = rpdfs.groupby('batch')['colocal_id'].value_counts().to_frame().rename(columns={'count':'post-filter'})
+    # diffcount = precount.join(postcount).assign(diff=lambda df:df['post-filter']-df['pre-filter'])
+    filtered_counts['final'] = get_colocal_id_counts(rpdfs, all_colocal_ids)
+    print('filter result:\n', filtered_counts)
+
+    return rpdfs
+
+
+def generate_summary_df(rpdf, roi_df, groupping_cols=None, extracted_groupping_vars=None):
+    """ create mean df, add categorical variables defined in EXTRACT_GROUP_MAPS """
+    if not groupping_cols:
+        assert extracted_groupping_vars is not None
+        groupping_cols = extracted_groupping_vars + ['ex_i', 'roi_i', 'colocal_id']
+
+    groupping_cols = [c for c in groupping_cols if (c in rpdf.columns and not all(pd.isnull(rpdf[c])))]
+    mean_rpdf = rpdf.groupby(groupping_cols).mean(numeric_only=True).reset_index()
+    sum_rpdf = rpdf.groupby(groupping_cols).size().reset_index().rename(columns={0:'count'})
+    summary_df = pd.merge(sum_rpdf, mean_rpdf, on=groupping_cols, how='left')
+
+    roi_groupping_cols = [c for c in groupping_cols if (c in roi_df and not all(pd.isnull(roi_df[c])))]
+    summary_df = pd.merge(left=summary_df, right=roi_df, on=roi_groupping_cols, how='left')
+    summary_df['count_per_um'] = summary_df['count']/summary_df['roi_area_um']
+    summary_df['count_per_mm'] = summary_df['count']/summary_df['roi_area_mm']
+    return summary_df
 
 
 

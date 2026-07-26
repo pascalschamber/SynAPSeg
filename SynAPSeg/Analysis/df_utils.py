@@ -2,9 +2,14 @@
 Analysis-related Utility functions for dataframes
     for statistics-related analysis see utils_stats
 """
+from typing import Optional
 
 import pandas as pd
 import numpy as np
+
+def query_df(df, **col_values):
+    """ helper that wraps df.query(build_query(**col_values))"""
+    return df.query(build_query(**col_values))
 
 def build_query(**col_values):
     """Build a pandas.DataFrame.query string from keyword pairs.
@@ -26,17 +31,12 @@ def build_query(**col_values):
     return " & ".join(terms)
 
 
-def query_df(df, **col_values):
-    """ helper that wraps df.query(build_query(**col_values))"""
-    return df.query(build_query(**col_values))
-
-
 def ugroups(df, cols) -> pd.DataFrame:
     """ get unique values within columns """
     return df[cols].drop_duplicates()
 
 def filter_present_cols(df, col_list: list[str]):
-    """ return list of column in df """
+    """ filter list of columns, returning columns in df """
     return [col for col in col_list if col in df.columns]
 
 
@@ -139,3 +139,26 @@ def flatten_multindex_df(
         df.columns = [flatten(col) for col in df.columns]
 
     return df
+
+def apply_group_info(df, grp_info:pd.DataFrame, idx_cols:list[str], **kwargs):
+    
+    unique_grp_cols = grp_info.columns.difference(df.columns).to_list()
+    cols = idx_cols+unique_grp_cols
+    
+    if len(unique_grp_cols) > 0:
+        assert all(c in df.columns for c in idx_cols)
+        df = df.merge(grp_info[cols], how='outer', on=idx_cols, **kwargs)
+    else:
+        print('all categorical cols already exist, no group info applied')
+    
+    # reorder idx cols first
+    ordered = cols + [c for c in df.columns if c not in cols]
+    return df[ordered]
+
+def znormalize(df, col, groupby:Optional[list[str]]=None):
+    return (
+        (df if groupby is None else df.groupby(groupby))
+        [col]
+        .transform(lambda x: (x - x.mean()) / x.std())
+    )
+ 
