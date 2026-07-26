@@ -2,13 +2,26 @@ import re
 import os
 from pathlib import Path
 import sys
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))) # add parent dir to sys.path
-from utils import utils_general as ug
-from utils import utils_image_processing as uip
-
-
 import napari
 import numpy as np
+
+from SynAPSeg.utils import utils_general as ug
+from SynAPSeg.utils import utils_image_processing as uip
+
+
+def duplicate_layer(viewer, layer_name, suffix='_copy'):
+    """ duplicate a napari layer """
+    from copy import deepcopy
+    
+    original_layer = viewer.layers[layer_name]
+    data, meta, layer_type = original_layer.as_layer_data_tuple()
+    new_data = deepcopy(data) # data.copy() if hasattr(data, 'copy') else deepcopy(data)
+    new_meta = deepcopy(meta)
+    new_meta['name'] = f"{original_layer.name}{suffix}"
+    add_method = getattr(viewer, f"add_{layer_type}")
+    layer = add_method(new_data, **new_meta)
+    return layer
+
 
 def dat(layer_name):
     """ convienence func that returns current viewer.layers[layer_name].data """

@@ -12,6 +12,7 @@ from napari.types import LayerDataTuple
 from napari.viewer import Viewer
 from magicgui import magicgui
 
+from pathlib import Path
 import numpy as np
 from skimage.morphology import binary_dilation, binary_erosion
 from skimage.draw import draw
@@ -20,12 +21,12 @@ from weakref import WeakKeyDictionary
 
 from qtpy.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve, QPoint
 from qtpy.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QCheckBox, QListWidget, QSpinBox,
+    QWidget, QVBoxLayout, QHBoxLayout, QCheckBox, QListWidget, QSpinBox, QDoubleSpinBox,
     QPushButton, QLabel, QRadioButton, QButtonGroup, QLineEdit,
     QMainWindow, QApplication, QToolBox, QMessageBox, 
     QFileDialog, QToolButton, QStyle, QListWidgetItem, QSizePolicy,
     QTextEdit, QDialog, QComboBox, QSlider,
-    QScrollArea, QGroupBox,QTabWidget, QGraphicsOpacityEffect
+    QScrollArea, QGroupBox,QTabWidget, QGraphicsOpacityEffect, 
 )
 
 
@@ -33,8 +34,7 @@ from SynAPSeg.utils import utils_image_processing as uip
 from SynAPSeg.utils import utils_general as ug
 from SynAPSeg.utils import utils_colocalization as uc
 from SynAPSeg.IO.metadata_handler import MetadataParser
-from pathlib import Path
-
+from SynAPSeg.Annotation.napari_utils import duplicate_layer
 
 
 
@@ -1368,10 +1368,13 @@ def create_image_filter_widget(viewer: napari.Viewer):
     from magicgui import magicgui
     from qtpy.QtWidgets import QSizePolicy
 
-    @magicgui(filter_type={'choices': ['Median', 'Gaussian', 'Minimum']},
-                filter_size={'widget_type': 'Slider', 'min': 1, 'max': 999, 'step': 1},
-                auto_call=False)
-    def filter_widget(filter_type: str = 'Median', filter_size: int = 1):
+    @magicgui(
+        filter_type={'choices': ['Median', 'Gaussian', 'Minimum']},
+        filter_size={'widget_type': 'Slider', 'min': 1, 'max': 999, 'step': 1},
+        create_new_layer={"widget_type": "CheckBox", "label": "Create new layer", "tooltip": "Toggle whether filtered result is created in new layer or modifies input layer"},
+        auto_call=False,
+    )
+    def filter_widget(filter_type: str = 'Gaussian', filter_size: int = 1, create_new_layer: bool = True):
         """
         Apply selected filter to the currently selected image layer in Napari.
 
@@ -1384,7 +1387,8 @@ def create_image_filter_widget(viewer: napari.Viewer):
         print(f'applying {filter_type} to layer: {layer_name}...')
         
         outmsg = '' # for holding messages during runtime
-        layer = viewer.layers[layer_name] # TODO probably best to do this on a copy or have a check box
+        
+        layer = duplicate_layer(viewer, layer_name, f'_filtered') if create_new_layer else viewer.layers[layer_name]
         
         # Apply the selected filter
         if filter_type == 'Median':
@@ -1397,12 +1401,11 @@ def create_image_filter_widget(viewer: napari.Viewer):
             filtered_data = ndi.minimum_filter(layer.data, size=filter_size)
         else:
             outmsg += f"\tunsupported filter_type ({filter_type}) selected"
-            return  # If an unknown filter type is selected, do nothing.
+            return
 
         # Update the layer data
         layer.data = filtered_data
-        # Refresh the viewer
-        viewer.layers.events.changed()
+        viewer.layers.events.changed() # Refresh the viewer
         outmsg += (f'completed {filter_type} filter')
         print(outmsg)
     
@@ -1411,15 +1414,12 @@ def create_image_filter_widget(viewer: napari.Viewer):
     return filter_widget
 
 
-
-
-
 class LabelEditWidget(QWidget):
     """
     Simple widget to manipulate labels in a Labels layer.
 
     Features:
-    - Remove labels: enter a comma/space-separated list of ints.
+    - Remove labels: enter a comma/space-separated list of ints to remove or keep exclusively.
     - Merge labels: convert one label into another.
     - Uses active Labels layer by default, or a user-selected one.
     """
@@ -1465,13 +1465,31 @@ class LabelEditWidget(QWidget):
         # --- remove labels group ---
         rm_group = QGroupBox("Remove labels")
         rm_layout = QVBoxLayout(rm_group)
+        
+        # --- mode select --- 
+        self._mode = 'remove' # default mode
+        rm_layout.addWidget(QLabel("Select mode: remove or keep (exclusively) these labels:"))
+        
+        
+        self.radio_remove = QRadioButton('remove', self)
+        self.radio_keep = QRadioButton('keep', self)
+        self.button_group = QButtonGroup(self)
+        self.button_group.addButton(self.radio_remove)
+        self.button_group.addButton(self.radio_keep)
+        self.button_group.buttonClicked.connect(self._on_update_mode)
+        self.radio_remove.setChecked(True)
 
+        mode_select_layout = QHBoxLayout()
+        mode_select_layout.addWidget(self.radio_remove)
+        mode_select_layout.addWidget(self.radio_keep)
+        rm_layout.addLayout(mode_select_layout)
+        
         rm_row = QHBoxLayout()
-        rm_row.addWidget(QLabel("Labels to remove (e.g. 1,2,3):"))
+        rm_row.addWidget(QLabel("Enter labels (e.g. 1,2,3):"))
         self.remove_edit = QLineEdit()
         rm_row.addWidget(self.remove_edit)
 
-        self.remove_btn = QPushButton("Remove")
+        self.remove_btn = QPushButton("Run")
         self.remove_btn.clicked.connect(self._on_remove_clicked)
 
         rm_layout.addLayout(rm_row)
@@ -1563,6 +1581,9 @@ class LabelEditWidget(QWidget):
     # -------------------------
     # Operations
     # -------------------------
+    def _on_update_mode(self, clicked_button):
+        self._mode = clicked_button.text()
+        
     def _on_remove_clicked(self):
         layer = self._get_target_layer()
         if layer is None:
@@ -1585,12 +1606,20 @@ class LabelEditWidget(QWidget):
             self.viewer.status = "No non-zero labels to remove."
             return
 
-        data = layer.data
-        for lbl in labels:
-            # in-place modification to avoid reallocation
-            mask = data == lbl
-            if mask.any():
-                data[mask] = 0
+        
+        if self._mode == 'keep':
+            from SynAPSeg.utils.utils_image_processing import filter_label_img
+            data = filter_label_img(layer.data, labels)
+            
+        elif self._mode == 'remove':
+            data = layer.data
+            for lbl in labels:
+                # in-place modification to avoid reallocation
+                mask = data == lbl
+                if mask.any():
+                    data[mask] = 0
+        else:
+            raise ValueError(self._mode)
 
         layer.data = data  # trigger refresh
         self.viewer.status = f"Removed labels: {labels}"
@@ -1971,4 +2000,422 @@ def make_add_label_shapes_widget(viewer: Viewer):
     viewer.window.add_dock_widget(_widget, area="right")
 
     return _widget
+
+
+
+class FilterLabelsWidget(QWidget):
+    """
+    Widget to filter objects in the currently selected labels layer
+    in a napari viewer based on Size (Area) or Mean Intensity.
+
+    Provides options to relabel the output sequentially and to modify
+    the data in-place or duplicate it into a new layer.
+    """
+
+    def __init__(
+        self,
+        viewer: napari.Viewer,
+        parent: Optional[QWidget] = None
+    ):
+        super().__init__(parent)
+
+        self.viewer = viewer
+        self.max_value = float('inf')
+
+        self._build_ui()
+        self._connect_layer_events()
+
+    def _build_ui(self):
+        self.setLayout(QVBoxLayout())
+
+        # --- Filter metric row ---
+        metric_row = QHBoxLayout()
+        metric_label = QLabel("Filter Metric:")
+        self.metric_combo = QComboBox()
+        self.metric_combo.addItems(["Size", "Mean Intensity"])
+        self.metric_combo.currentTextChanged.connect(self._toggle_intensity_image)
+        metric_row.addWidget(metric_label)
+        metric_row.addWidget(self.metric_combo)
+
+        # --- Intensity Image selection row (hidden by default) ---
+        self.image_row = QHBoxLayout()
+        image_label = QLabel("Reference Image:")
+        self.image_combo = QComboBox()
+        self._update_image_combo()
+        self.image_row.addWidget(image_label)
+        self.image_row.addWidget(self.image_combo)
+
+        # Initialize visibility based on default combo value
+        self._toggle_intensity_image(self.metric_combo.currentText())
+
+        # --- Min threshold row ---
+        min_row = QHBoxLayout()
+        min_label = QLabel("Min Threshold:")
+        
+
+        self.min_spin = QDoubleSpinBox()
+        self.min_spin.setMinimum(0)
+        self.min_spin.setMaximum(self.max_value)
+        self.min_spin.setValue(0)
+
+        min_row.addWidget(min_label)
+        min_row.addWidget(self.min_spin)
+
+        # --- Max threshold row ---
+        max_row = QHBoxLayout()
+        max_label = QLabel("Max Threshold:")
+        
+        self.max_spin = QDoubleSpinBox()
+        self.max_spin.setMinimum(0)
+        self.max_spin.setMaximum(self.max_value)
+        self.max_spin.setValue(self.max_value)
+
+        max_row.addWidget(max_label)
+        max_row.addWidget(self.max_spin)
+
+        # --- Options Checkboxes ---
+        self.relabel_cb = QCheckBox("Relabel data sequentially")
+        self.relabel_cb.setChecked(False)
+
+        self.inplace_cb = QCheckBox("Modify input layer in-place")
+        self.inplace_cb.setChecked(False)
+
+        # --- Apply button ---
+        self.apply_button = QPushButton("Apply Filter")
+        self.apply_button.clicked.connect(self.apply_filter)
+
+        # --- Assemble main layout ---
+        self.layout().addLayout(metric_row)
+        self.layout().addLayout(self.image_row)
+        self.layout().addLayout(min_row)
+        self.layout().addLayout(max_row)
+        self.layout().addWidget(self.relabel_cb)
+        self.layout().addWidget(self.inplace_cb)
+        self.layout().addWidget(self.apply_button)
+
+    def _connect_layer_events(self):
+        """Keep the image combo box up to date when layers are added/removed."""
+        self.viewer.layers.events.inserted.connect(self._update_image_combo)
+        self.viewer.layers.events.removed.connect(self._update_image_combo)
+
+    def _update_image_combo(self, event=None):
+        """Populate the combo box with available Image layers."""
+        current_text = self.image_combo.currentText()
+        self.image_combo.clear()
+        image_layers = [
+            layer.name for layer in self.viewer.layers 
+            if isinstance(layer, napari.layers.Image)
+        ]
+        self.image_combo.addItems(image_layers)
+        if current_text in image_layers:
+            self.image_combo.setCurrentText(current_text)
+
+    def _toggle_intensity_image(self, text):
+        """Show or hide the reference image dropdown based on the chosen metric."""
+        is_intensity = (text == "Mean Intensity")
+        for i in range(self.image_row.count()):
+            widget = self.image_row.itemAt(i).widget()
+            if widget:
+                widget.setVisible(is_intensity)
+
+    def apply_filter(self):
+        """Apply size/intensity filter to active Labels layer."""
+        from skimage.measure import regionprops_table
+        
+        active_layer = self.viewer.layers.selection.active
+
+        # Validate Active Layer
+        if not isinstance(active_layer, napari.layers.Labels):
+            QMessageBox.warning(
+                self,
+                "Invalid Layer",
+                "Please select an active Labels layer.",
+            )
+            print("FilterLabelsWidget: No active Labels layer selected.")
+            return
+
+        min_val = self.min_spin.value()
+        max_val = self.max_spin.value()
+
+        if min_val > max_val:
+            QMessageBox.warning(
+                self,
+                "Invalid Threshold Range",
+                "Min threshold must be less than or equal to max threshold.",
+            )
+            return
+
+        
+        
+        # Relabel if requested
+        if self.relabel_cb.isChecked():
+            data = uip.relabel(active_layer.data, connectivity=active_layer.data.ndim)
+        else:
+            data = active_layer.data
+
+        # Calculate region properties based on chosen metric
+        metric = self.metric_combo.currentText()
+        
+        if metric == "Size":
+            props = regionprops_table(data, properties=('label', 'area'))
+            values = props['area']
+        else:
+            image_name = self.image_combo.currentText()
+            if not image_name or image_name not in self.viewer.layers:
+                QMessageBox.warning(
+                    self,
+                    "Missing Reference Image",
+                    "A valid Image layer must be selected for Mean Intensity filtering.",
+                )
+                return
+                
+            intensity_data = self.viewer.layers[image_name].data
+            
+            # Ensure intensity data matches labels shape
+            if intensity_data.shape != data.shape:
+                QMessageBox.warning(
+                    self,
+                    "Shape Mismatch",
+                    "The selected Image and Labels layer must have the same dimensions.",
+                )
+                return
+
+            props = regionprops_table(
+                data, 
+                intensity_image=intensity_data, 
+                properties=('label', 'intensity_mean')
+            )
+            values = props['intensity_mean']
+
+        labels = props['label']
+        
+        # Determine which labels meet the criteria
+        valid_mask = (values >= min_val) & (values <= max_val)
+        valid_labels = labels[valid_mask]
+        filtered_data = uip.filter_label_img(data, valid_labels)
+        
+        # Update viewer
+        if self.inplace_cb.isChecked():
+            active_layer.data = filtered_data
+        else:
+            new_layer_name = f"{active_layer.name}_filtered"
+            if new_layer_name in self.viewer.layers:
+                self.viewer.layers[new_layer_name].data = filtered_data
+            else:
+                self.viewer.add_labels(filtered_data, name=new_layer_name)
+
+        print(
+            f"FilterLabelsWidget: Filter applied ({metric}) "
+            f"min={min_val}, max={max_val} "
+            f"to layer '{active_layer.name}'."
+        )
+
+
+
+
+class MorphologicalClosingWidget(QWidget):
+    """
+    Widget to apply morphological closing to the currently selected labels layer
+    in a napari viewer to bridge gaps in arbitrary numbers of contiguous objects.
+
+    Supports 2D and 3D arrays, optional in-place modification, and optional
+    re-calculation of connected components (relabeling).
+    """
+
+    def __init__(
+        self,
+        viewer: napari.Viewer,
+        parent: Optional[QWidget] = None,
+    ):
+        super().__init__(parent)
+
+        self.viewer = viewer
+        self._build_ui()
+
+    def _build_ui(self):
+        self.setLayout(QVBoxLayout())
+
+        # --- Structuring Element Dimensions ---
+        struct_row = QVBoxLayout()
+        struct_label = QLabel("Structuring Element Dims (Z, Y, X):")
+        
+        # Z dimension (Set to 1 by default to act as 2D unless explicitly changed)
+        self.z_spin = QSpinBox()
+        self.z_spin.setMinimum(1)
+        self.z_spin.setMaximum(99)
+        self.z_spin.setValue(1)
+        self.z_spin.setToolTip("Z dimension (Set to 1 for purely 2D operations)")
+
+        # Y dimension
+        self.y_spin = QSpinBox()
+        self.y_spin.setMinimum(1)
+        self.y_spin.setMaximum(99)
+        self.y_spin.setValue(3)
+
+        # X dimension
+        self.x_spin = QSpinBox()
+        self.x_spin.setMinimum(1)
+        self.x_spin.setMaximum(99)
+        self.x_spin.setValue(3)
+
+        struct_row.addWidget(struct_label)
+        for dim, spinbox in zip('ZYX', [self.z_spin, self.y_spin, self.x_spin]):
+            dim_layout = QHBoxLayout()
+            dim_layout.addWidget(QLabel(f"{dim}:"))
+            dim_layout.addWidget(spinbox)
+            struct_row.addLayout(dim_layout)
+
+        # --- Options (Checkboxes) ---
+        options_layout = QVBoxLayout()
+        
+        self.relabel_checkbox = QCheckBox("Relabel objects (Connected Components)")
+        self.relabel_checkbox.setToolTip(
+            "If checked, recalculates distinct label IDs for all disconnected components."
+        )
+        
+        self.inplace_checkbox = QCheckBox("Modify layer in-place")
+        self.inplace_checkbox.setToolTip(
+            "If checked, overwrites the active layer instead of duplicating it."
+        )
+
+        options_layout.addWidget(self.relabel_checkbox)
+        options_layout.addWidget(self.inplace_checkbox)
+
+        # --- Apply button ---
+        self.apply_button = QPushButton("Apply Morphological Closing")
+        self.apply_button.clicked.connect(self.apply_closing)
+
+        # --- Assemble main layout ---
+        self.layout().addLayout(struct_row)
+        self.layout().addLayout(options_layout)
+        self.layout().addSpacing(10)
+        self.layout().addWidget(self.apply_button)
+        self.layout().addStretch()  # Pushes everything to the top
+
+    def apply_closing(self):
+        """Apply morphological closing to active layer."""
+        t0 = ug.dt()
+        active_layer = self.viewer.layers.selection.active
+        
+        if active_layer is None:
+            QMessageBox.warning(
+                self,
+                "No Active Layer",
+                "No active layer selected. Please select a Labels layer.",
+            )
+            return
+
+        if not isinstance(active_layer, napari.layers.Labels):
+            QMessageBox.warning(
+                self,
+                "Invalid Layer Type",
+                "Active layer must be a Labels layer.",
+            )
+            return
+        
+        print(f"running binary closing on {active_layer.name}...")
+        
+        data = active_layer.data
+        ndim = data.ndim
+
+        # Build structuring element based on dimensions
+        z_val = self.z_spin.value()
+        y_val = self.y_spin.value()
+        x_val = self.x_spin.value()
+
+        if ndim == 2:
+            struct = np.ones((y_val, x_val), dtype=bool)
+        elif ndim == 3:
+            struct = np.ones((z_val, y_val, x_val), dtype=bool)
+        else:
+            QMessageBox.warning(
+                self,
+                "Unsupported Dimensions",
+                f"Data has {ndim} dimensions. Only 2D and 3D arrays are supported.",
+            )
+            return
+
+        
+        # # 1. Perform safe closing that preserves independent labels
+        # closed_mask = np.zeros_like(data)
+        # unique_labels = uip.unique_nonzero(data)
+        
+        # for label_id in unique_labels:
+        #     closed_single_label = binary_closing((data == label_id), structure=struct)
+        #     closed_mask[closed_single_label] = label_id
+        closed_mask = binary_closing_bboximpl(data, struct)
+        
+
+        # 2. Relabel if requested (Safely recalculating connected components per original class)
+        if self.relabel_checkbox.isChecked():
+            relabeled_mask = np.zeros_like(closed_mask)
+            current_max_id = 0
+            
+            # Relabel each group independently so merged labels don't cross-contaminate
+            for label_id in uip.unique_nonzero(closed_mask):  # Skip 0 (background)
+                cc_labels = uip.relabel(closed_mask == label_id, connectivity=closed_mask.ndim)
+                cc_labels[cc_labels > 0] += current_max_id
+                relabeled_mask += cc_labels.astype(closed_mask.dtype)
+                current_max_id = np.max(relabeled_mask)
+                
+            closed_mask = relabeled_mask
+
+        # 3. Handle output (In-place vs Duplicate)
+        if self.inplace_checkbox.isChecked():
+            active_layer.data = closed_mask
+            active_layer.refresh()
+            print(f"MorphologicalClosingWidget: Modified '{active_layer.name}' in-place.")
+        else:
+            new_layer_name = f"{active_layer.name}_closed"
+            if new_layer_name in self.viewer.layers:
+                self.viewer.layers[new_layer_name].data = closed_mask
+            else:
+                self.viewer.add_labels(
+                    closed_mask,
+                    name=new_layer_name,
+                )
+        print(f"MorphologicalClosingWidget completed in {ug.dt()-t0}s.")
+    
+    
+def binary_closing_bboximpl(data:np.ndarray, struct:np.ndarray):
+    """ 
+    binary closing that operates on, and preserves, each unique pixel label in data 
+    uses bbox implementation improve performance for sparse labels 
+    """
+
+    from scipy.ndimage import binary_closing
+    
+    closed_mask = np.zeros_like(data)
+    unique_labels = uip.unique_nonzero(data)
+    
+    pads = [s // 2 for s in struct.shape]
+
+    for label_id in unique_labels:
+        # Find all coordinates where this label exists
+        coords = np.nonzero(data == label_id)
+        
+        # Skip if label is completely empty
+        if len(coords[0]) == 0:
+            continue
+            
+        # Build the bounding box dynamically for 2D or 3D
+        bbox_slices = []
+        for dim in range(data.ndim):
+            # Clamp coordinates to the array boundaries to prevent out-of-bounds errors
+            dim_min = max(0, coords[dim].min() - pads[dim])
+            dim_max = min(data.shape[dim], coords[dim].max() + 1 + pads[dim])
+            bbox_slices.append(slice(dim_min, dim_max))
+            
+        bbox = tuple(bbox_slices)
+        
+        # Extract the local crop & Perform the closing operation
+        closed_local = binary_closing((data[bbox] == label_id), structure=struct)
+        
+        # Inject the result back using fast in-place boolean indexing
+        # target_crop is a view, so mutating it mutates closed_mask
+        target_crop = closed_mask[bbox]
+        target_crop[closed_local] = label_id
+    
+    return closed_mask
+
 

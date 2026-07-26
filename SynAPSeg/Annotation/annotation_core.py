@@ -32,7 +32,7 @@ def build_display_layer_name(img_name, c_i, layer_type=None, skip_layer_types = 
     layer_name = f"{img_name}{_ch}"          #+ (f"_ch{c_i}" if not img_name.endswith(f"_ch{c_i}") else "")
     return layer_name
 
-def display_images(viewer, images_to_display, apply_colormaps=False, set_lbl_contours=1, channel_colormaps: Optional[list]=None):
+def display_images(viewer, images_to_display, apply_colormaps=True, set_lbl_contours=1, channel_colormaps: Optional[list]=None):
     """ add to viewer and apply options based on "load_as" arg (either 'images', 'labels', 'annotations', or 'ROIS')"""
     
     # setup colormaps
@@ -142,6 +142,8 @@ def create_napari_viewer(
     # individual tools (keep references instead of adding directly to docks)
     image_filter_widget = nw.create_image_filter_widget(viewer)      # filtering tools
     threshold_widget = nw.BinaryThresholdWidget(viewer)
+    object_filter_widget = nw.FilterLabelsWidget(viewer)
+    morph_closing_widget = nw.MorphologicalClosingWidget(viewer)
 
     layer_export_widget = nw.layer_export(viewer, exwidg)            # export tools
 
@@ -164,6 +166,8 @@ def create_napari_viewer(
         "Filtering": [
             image_filter_widget,
             threshold_widget,
+            morph_closing_widget,
+            object_filter_widget,
         ],
         "Label Editing": [
             label_edit_widget,
