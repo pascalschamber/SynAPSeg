@@ -10,7 +10,6 @@ import yaml
 import sys
 import os
 
-from SynAPSeg.IO.env import verify_and_set_env_dirs
 from SynAPSeg.config import constants
 
 
@@ -199,6 +198,8 @@ def show_settings_dialog(parent=None):
     main_layout.addLayout(actions)
 
     def save_and_close():
+        from SynAPSeg.IO.env import verify_and_set_env_dirs
+        
         # parse the UI inputs
         new_data = {
             'ROOT_DIR': [input_widgets['ROOT_DIR'].item(i).text() for i in range(input_widgets['ROOT_DIR'].count())],

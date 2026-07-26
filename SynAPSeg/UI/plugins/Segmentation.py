@@ -101,17 +101,23 @@ class MainApp(BaseApp):
     
     def _run_test_mode(self):
         """Executes main run function in test mode"""
+        print('running in test mode...')
         self._running_in_test_mode = True
-        self._run()
         
+        try:
+            self._run()
+        except Exception as e:
+            raise RuntimeError('test mode run failed') from e
+        finally:
+            self._running_in_test_mode = False
         
     
-    # --- interp -> run_config ---       
     def _run(self):
         """Executes segmentation process."""
         if not self.check_config_is_validated():
             return
 
+        # --- interp -> run_config ---       
         built_config = self.get_built_config()
 
         if self._running_in_test_mode:
@@ -124,13 +130,10 @@ class MainApp(BaseApp):
             
             # handle cancel
             if not built_config['image_filepaths_to_process']:
-                self._running_in_test_mode = False
                 return
-
         
-        print('\n\n running segmentation with built config')
-        for k,v in built_config.items():
-            print(f'{k}: {v}')  
+        self.printr('\n\n running segmentation with built config', built_config)
+         
             
         # fetch config key
         CONFIG_KEY = self.state_manager.get('selected_project')
@@ -144,6 +147,8 @@ class MainApp(BaseApp):
         if not os.path.exists(seg_config_path): 
             raise ValueError(f"seg_config_path does not exist, got: {seg_config_path}")
         
+        if not self._running_in_test_mode:
+            built_config['image_filepaths_to_process'] = None
         prepend_config_key(seg_config_path, CONFIG_KEY, built_config)
         
 
@@ -161,7 +166,6 @@ class MainApp(BaseApp):
             CONFIG_KEY= CONFIG_KEY,
         )
         self.current_worker.finished_signal.connect(self.handle_run_worker_complete)
-        self._running_in_test_mode = False
     
 
     def get_built_config(self) -> dict:

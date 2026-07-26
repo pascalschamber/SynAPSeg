@@ -10,7 +10,7 @@ import ast
 import os
 from pathlib import Path
 from PyQt6.QtCore import pyqtSignal
-from typing import Dict
+from typing import Dict, Optional, Iterable
 
 from SynAPSeg.UI.widgets import style_sheets as Style
 from SynAPSeg.UI.widgets.label import HoverLabel
@@ -68,7 +68,7 @@ class BaseConfigField(QWidget):
     value_changed = pyqtSignal()
     widget: QWidget # each child class should use self.set_widget to init
 
-    def __init__(self, default_value=None, widget_type='', tooltip='', heading='General', category='', flags=None):
+    def __init__(self, default_value=None, widget_type='', tooltip='', heading='General', category='', flags=None, **kwargs):
         super().__init__()
         self.attribute_keys = ['default_value', 'widget_type', 'tooltip', 'heading', 'category', 'flags'] #, 'flag', 'uid']
         self.default_value = default_value
@@ -78,6 +78,8 @@ class BaseConfigField(QWidget):
         self.widget_type = widget_type
         self.tooltip = tooltip
         self.flags = flags
+        for k,v in kwargs.items():
+            setattr(self, k, v)
 
     def get_value(self):
         """Retrieve the current value from the widget."""
@@ -372,9 +374,8 @@ class SelectionConfigField(BaseConfigField):
         if value in self.options:
             self.widget.setCurrentText(str(value))
 
-
 class MultiSelectionConfigField(BaseConfigField):
-    def __init__(self, default_value=None, value_options=None, widget_type='', tooltip='', heading='General', category='', flags=None):
+    def __init__(self, default_value:Optional[Iterable[str]]=None, value_options:Optional[Iterable[str]]=None, widget_type='', tooltip='', heading='General', category='', flags=None):
         super().__init__(
             default_value=default_value or [],
             widget_type=widget_type,

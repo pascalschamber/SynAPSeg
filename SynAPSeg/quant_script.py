@@ -114,6 +114,9 @@ def main(config_key, config_path=None, default_parameters_path=None, dispatchers
     ####################################################################################
     # MAIN LOOP # Process Each Dispatcher
     ####################################################################################
+    dispatchers_slice = dispatchers_slice or QUANT_CONFIG.params.get('DISPATCHER_SLICE') or slice(None)
+    dispatchers_slice = dispatchers_slice if isinstance(dispatchers_slice, slice) else slice(*dispatchers_slice)
+    dispatchers.logger.info(f"n dispatchers: {len(dispatchers) if dispatchers_slice==slice(None) else dispatchers_slice}")
     
     for disp in dispatchers[dispatchers_slice or slice(None, None)]:
         data = disp.load(data_loaders=None) # Load example's data

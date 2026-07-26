@@ -38,6 +38,9 @@ class BaseApp(QWidget):
         # params set by each app
         self.default_config_path = ''
         self.PLUGIN_PARAM_MAP = {}
+        
+        # misc attributes
+        self.debug = False # enable detailed process info
 
         
     def init_layout(self):
@@ -109,8 +112,11 @@ class BaseApp(QWidget):
         return self.app_name
     
                 
-    def get_examples_directory(self):
-        """ returns path to project's examples data folder from state_manager, or raises warning dialog if invalid """
+    def get_examples_directory(self, warn_diag=True):
+        """ 
+        returns path to project's examples data folder from state_manager
+        raises warning dialog if invalid and warn_diag=True
+        """
         
         project_root = self.state_manager.get("project_root_directory", None)
         project_name = self.state_manager.get("selected_project", None)
@@ -128,7 +134,10 @@ class BaseApp(QWidget):
                 emsg = f'path does not exist `{path_to_examples}`'
         
         if emsg is not None:
-            warning_dialog(self, "Invalid project path", emsg)
+            if warn_diag:
+                warning_dialog(self, "Invalid project path", emsg)
+            else:
+                print(emsg)
             return None
 
 
@@ -209,16 +218,11 @@ class BaseApp(QWidget):
         """ 
         update interp with widget config spec 
             invoked when config is built 
-        """
-        # debugstr = '\n\nupdating interpreter from config widget values:\n'
-        # print(debugstr)
-        
-        # updates specs simulataneously with merged values
-        # current_widget_config = self.get_config_widget_params()
-        
+        """        
         self.interp.update_schema(self.get_config_widget_params(), flatten_input=False, clear_old=True)
-                
-        rich.print('\n\nupdating interpreter from config widget values:\n', self.interp.to_run_config())
+        
+        if self.debug:
+            self.printr('\n\nupdating interpreter from config widget values:\n', self.interp.to_run_config())                
         
     def get_config_widget_params(self):
         """ fetch config values from config_widget """
@@ -232,6 +236,11 @@ class BaseApp(QWidget):
                 f"Please click 'Validate Configuration' before running {self.app_name}.")
             return False
         return True
+
+    def printr(self, *args, **kwargs):
+        """ rich print dict """
+        rich.print(*args, **kwargs)
+        
 
 
 

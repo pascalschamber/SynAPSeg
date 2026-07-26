@@ -2,11 +2,9 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QListWidget, QStackedWidget, QWidget, QVBoxLayout, QPushButton, 
     QFileDialog, QLabel, QLineEdit, QHBoxLayout, QComboBox, QTabWidget, 
 )
-from PyQt6.QtGui import QIcon
-from PyQt6.QtCore import QObject, pyqtSignal, Qt
+from PyQt6.QtGui import QIcon, QPixmap, QPainter, QPen, QColor, QFont
+from PyQt6.QtCore import QObject, pyqtSignal, Qt, QTimer, QVariantAnimation, QRectF
 from PyQt6.QtWidgets import QSplashScreen
-from PyQt6.QtGui import QPixmap, QPainter, QPen, QColor, QFont
-from PyQt6.QtCore import Qt, QTimer, QVariantAnimation, QRectF
 
 import importlib.util
 import json
@@ -15,8 +13,8 @@ import yaml
 import os
 import sys
 import argparse
+from timeit import default_timer
 
-from SynAPSeg.utils import utils_general as ug
 from SynAPSeg.config import constants
 from SynAPSeg.IO.BaseConfig import read_config, write_config
 from SynAPSeg.IO.env import verify_and_set_env_dirs
@@ -80,6 +78,7 @@ class StateManager(QObject):
             create_user_settings()
             
         if Path(SETTINGS_FILE).exists():
+            from SynAPSeg.utils.utils_general import get_existant_path
             settings = read_config(SETTINGS_FILE)
             
             # set env vars
@@ -89,7 +88,7 @@ class StateManager(QObject):
             # check if these keys are in setting, if not, set default or load from user settings
             _parse_keys = {
                 'segmentation_config_log_path':constants.SEG_CONFIG_PATH, 
-                'project_root_directory':ug.get_existant_path(settings.get('PROJECTS_ROOT_DIR'))
+                'project_root_directory':get_existant_path(settings.get('PROJECTS_ROOT_DIR'))
             }
 
             _settings = settings.get('UI') or {}
@@ -282,7 +281,11 @@ class MainWindow(QMainWindow):
             self.app_tray.addTab(app, name)
     
     def load_app_module(self, module_name, module_path):
-        """Loads a sub-application dynamically."""
+        """
+        Loads a sub-application dynamically.
+            module must implement `MainApp` class that inherits from `BaseApp` class
+            and accept arg `state_manager` in init
+        """
         from SynAPSeg.Plugins.base import load_module_from_path
         module = load_module_from_path(module_name, module_path)
         if module is not None:
@@ -367,7 +370,8 @@ class SynAPSegSplashScreen(QSplashScreen):
 
 
 def main():
-    load_time_start = ug.dt()
+    
+    load_time_start = default_timer()
 
     parser = argparse.ArgumentParser(description="SynAPSeg Application")
     parser.add_argument("--debug", action="store_true")
@@ -394,7 +398,7 @@ def main():
     # --- 3. Close Splash and Show Main Window ---
     window.show()
     splash.finish(window)
-    print(f"Load time: {ug.dt() - load_time_start}")
+    print(f"Load time: {default_timer() - load_time_start}")
 
     return app.exec()
 

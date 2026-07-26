@@ -43,6 +43,18 @@ from SynAPSeg.UI.widgets.thread_worker import SubProgress
 
 torch = ug.try_import('torch')
 
+def handle_pipe_callback(dispatchers, disp, progress_callback:Optional[Any]=None):
+    """Create a "Sub-Callback" that translates 0-100% within the pipeline
+    into the start_pct -> end_pct range on the real UI bar."""
+    start_pct = int((disp.image_i / dispatchers.n_disp) * 100)
+    end_pct = int(((disp.image_i + 1) / dispatchers.n_disp) * 100)
+    
+    if progress_callback:
+        pipe_cb = SubProgress(progress_callback, start_pct, end_pct)
+    else:
+        pipe_cb = SubProgress(lambda *args: None, start_pct, end_pct)  # dummy callback 
+    return pipe_cb
+
 
 def main(
     CONFIG_KEY: Optional[str]=None, 
@@ -90,45 +102,32 @@ def main(
             
     _disp_slice = slice(*disp_i_slice)
     for disp in dispatchers[_disp_slice]:     
-        print(dispatchers.get_progress(disp))
-        
-        # Define the 'slice' of the progress bar for THIS specific image
-        # If we have 4 images, Image 1 owns 0-25%, Image 2 owns 25-50%, etc.
-        start_pct = int((disp.image_i / dispatchers.n_disp) * 100)
-        end_pct = int(((disp.image_i + 1) / dispatchers.n_disp) * 100)
-        
-        if progress_callback:
-            # Create a "Sub-Callback" that translates 0-100% within the pipeline
-            # into the start_pct -> end_pct range on the real UI bar.
-            pipe_cb = SubProgress(progress_callback, start_pct, end_pct)
 
-        else:
-            # pipe_cb = None
-            pipe_cb = SubProgress(lambda *args: None, start_pct, end_pct)  # dummy callback 
-        
-        # 1. Loading phase (First 10% of this item's slice)
-        pipe_cb(0, f"Loading {disp.image_i}...")
+        print(dispatchers.get_progress(disp))
+        pipe_cb = handle_pipe_callback(dispatchers, disp, progress_callback)
 
         # load and init
         #########################################################################################
         # fetch parameters for input image and get input image parser to handle this type of image
+        pipe_cb(0, f"Loading {disp.image_i}...")
         image_parser = disp.get_image_parser()
         img_obj, arr, ex_md = disp.image_parser.run()
+        if SEG_CONFIG['USE_EXISTING']:
+            
+            from SynAPSeg.IO.metadata_handler import MetadataParser
+            from copy import deepcopy
+            pathtoex = Path(ex_md['image_path']).parent
+            ex_exmd = MetadataParser.try_get_metadata(pathtoex)
+            ex_exmd['segmentation_pipeline_config'] = deepcopy(ex_md['segmentation_pipeline_config'])
+            ex_md.update(ex_exmd)
         
-
-        # init metadata dict # check if should skip this b/c it is completed 
+        # check if should skip this b/c it is completed 
         if (not verify_input_parsed(image_parser, ex_md, SEG_CONFIG)) or (check_skip_input_file(SEG_CONFIG, ex_md)):
             continue
         
         # slice array for expected input and arrange channels in wavelength order, if chs deviate from expected they will be included into array and index info is in ex_md['data_metadata']['inserted_null_chs']
         arr, arr_mip = format_prediction_input(image_parser, img_obj, arr, ex_md, SEG_CONFIG) # arr fmt = "STCZYX"
         
-        # display input
-        if bool(0): 
-            up.show_ch(uip.norm_percentile(np.moveaxis(arr_mip, 0, -1), (1,99.8), ch_axis=-1), axis=-1)
-        
-
-
         # Predictions
         #########################################################################################
         predictions = pipeline.run(
@@ -136,6 +135,8 @@ def main(
             data_state={'path_to_example':ex_md['output_dir']}, 
             progress_callback=pipe_cb if progress_callback else None
         )
+        # clear gpu memory
+        uML.clear_gpu_memory(torch=torch)
 
         # display results
         if bool(0):
@@ -159,14 +160,8 @@ def main(
         
         # track disp run time        
         console(f"dispatcher (i={disp.image_i}) completed in {disp.get_elapsed_time()} seconds.\n{ug.get_datetime()}", title=" Dispatcher Finished ")
-
-        if pipe_cb is not None:
-            pipe_cb(100, "Finished!")
+        pipe_cb(100, "Finished!")
         
-        
-        # clear gpu memory
-        uML.clear_gpu_memory(torch=torch)
-                
         if SEG_CONFIG.get('RETURN_OUTPUT', False): # for ui test
             return arr, predictions, ex_md
         
