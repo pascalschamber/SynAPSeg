@@ -92,7 +92,7 @@ class ROIHandlingStage(BasePipelineStage):
 
         rois = data["rois"] # either list[np.ndarray] or geojsonPolyCollection
         
-        # Parameters from config - all can be handled safely if not provided?
+        # Parameters from config - all can be handled safely if not provided
         #############################################################################################
         intensity_image_key =           config.get("INTENSITY_IMAGE_NAME", None)
         img_fmt =                       config.get("img_fmt", "ZYX") 
@@ -192,7 +192,7 @@ class ROIHandlingStage(BasePipelineStage):
                 self.logger.debug("Converted ROI array to polygon representation - channels are keys.")
             else:
                 polygons_per_label = None
-                self.logger.debug(f"Polygon representation of ROI array is not supported for ROI with format: {roi_fmt}. Passing with null value.")
+                self.logger.debug(f"Skipping conversion of non-2D array to polygon representation (unsupported for ROI with format: {roi_fmt}).")
 
 
 
@@ -284,7 +284,7 @@ class ROIHandlingStage(BasePipelineStage):
                 labeled_mask,
                 img_fmt,
                 roi_fmt,
-                coerce_roi_fmt=False, # this should already be handled more sophisticatedly above
+                coerce_roi_fmt=False, # this is already handled more sophisticatedly above
                 PX_SIZES=PX_SIZES,
                 rps_to_get = rps_to_get,
                 get_object_coords=GET_OBJECT_COORDS,
@@ -483,7 +483,7 @@ class ROIAssigner:
             coords_list = df['coords'].to_list()
             computed['coords_geometric'] = uc.convert_coordinates_image_to_geometric(coords_list)
             computed['sorted_coords'] = [
-                uc.sort_coordinates_by_distance(coords)[0] 
+                uc.sort_coordinates_by_distance(coords)[0]  # sort coords by distance from centroid so roi assignment is biased towards objects center
                 for coords in computed['coords_geometric']
             ]
         
@@ -665,7 +665,7 @@ class ROIAssigner:
             _lbls = uip.safe_squeeze(lbls[indexer], 3)
             _roi = uip.safe_squeeze(roi[indexer], 3)
 
-            # Compute mapping
+            # Compute overlap, returning mapping of object label -> roi_i
             mapping, stats = utils_colocalization_3D.map_synapses_to_dendrites_overlap(_lbls, _roi)
             
             # insert output at this colocal id - assumes channels map to colocal id

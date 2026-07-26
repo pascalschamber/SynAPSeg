@@ -9,6 +9,7 @@ from pydantic import TypeAdapter, ValidationError as pyValErr
 
 from SynAPSeg.common.Logging import setup_default_logger
 from SynAPSeg.Quantification.validation import ValidationError
+from SynAPSeg.IO.BasePipelineComponent import BasePipelineComponent
 
 class DispatcherBase:
     """Mixin-style base class that implements methods shared by ExampleDispatcher and DispatcherCollection."""
@@ -61,3 +62,40 @@ class DispatcherBase:
         for key in err.possible_keys:
             if key not in file_map:
                 file_map[key] = []
+
+
+class DispatcherCollectionBase(BasePipelineComponent):
+    """Mixin-style base class that implements methods shared by ExampleDispatcher and DispatcherCollection."""
+    dispatchers = []
+    
+    # def __init__(self, *args, **kwargs):
+    #     pass
+    
+    # def _create_dispatchers(self, examples_to_process):
+
+    # def _init_pipeline(self):
+    #     if not 'PIPELINE_STAGE_NAMES' in self.config:
+    #         return None
+
+    #     pass # TODO
+          
+    def __iter__(self):
+        return iter(self.dispatchers)
+
+    def __getitem__(self, index):
+        return self.dispatchers[index]
+
+    def __len__(self):
+        return len(self.dispatchers)
+
+    def filter(self, condition):
+        """
+        Returns a list of dispatchers that meet the given condition.
+        
+        Args:
+        condition: A callable that takes an ExampleDispatcher and returns True/False.
+        
+        Returns:
+        List of ExampleDispatcher objects.
+        """
+        return [d for d in self.dispatchers if condition(d)]

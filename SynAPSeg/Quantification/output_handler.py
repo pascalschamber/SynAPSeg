@@ -10,11 +10,28 @@ from typing import Optional
 import threading
 import queue
 import time
+from collections.abc import Iterable
 
 from SynAPSeg.utils import utils_general as ug
 from SynAPSeg.IO.metadata_handler import MetadataParser
 from SynAPSeg.utils.utils_ImgDB import ImgDB
 from SynAPSeg.common.Logging import setup_default_logger
+
+_WRITERS = {
+    '.csv': 'to_csv',
+    '.xlsx': 'to_excel',
+    '.parquet': 'to_parquet',
+}
+
+_READERS = {                # store as strings, invoke with eval(..) to avoid missing package errors
+    '.csv': 'pd.read_csv',
+    '.xlsx': 'pd.read_excel',
+    '.parquet': 'pd.read_parquet',
+}
+
+# supported readers as re.match compatible pattern - used when getting cache contents
+_READER_SUFFIX_MATCH_PATTERN = '(.*\.csv$)|(.*\.xlsx$)|(.*\.parquet$)' 
+
 
 class OutputHandler:
     def __init__(self, stages, QUANT_CONFIG, logger=None, outdir_path=None):
@@ -49,6 +66,12 @@ class OutputHandler:
                    
                    
     def place_outputs(self, data, config):
+        """ cache data to temp folder or append to main container
+        
+            args:
+                data - df
+                config - QUANT_CONFIG
+        """
         for key, cont_name in self.data_keys.items():
             result = data.get(key, pd.DataFrame())
             if self.cache_intermediate_results:
@@ -58,24 +81,49 @@ class OutputHandler:
         self.logger.info(f'place_outputs completed.')
     
 
-    def handle_writing_results_exceptions(self, key, df):
+    def handle_writing_results_exceptions(self, key, df, config):
+        
+        # drop coords from output to reduce filesize bloat - unless otherwise specified
+        WRITE_COORDS = config.get('WRITE_COORDS', False)
+        
         if isinstance(df, pd.DataFrame):
             if key == 'rpdf' and 'coords' in df.columns:
-                df['coords'] = df['coords'].apply(lambda x: x.tolist()) # trying to avoid potential error with saving np arrays, when they ahve to be converted to strings?
+                if WRITE_COORDS:
+                    df['coords'] = df['coords'].apply(lambda x: x.tolist()) # trying to avoid potential error with saving np arrays, when they ahve to be converted to strings?
+                else:
+                    df = df.drop(columns=['coords'])
         return df
     
-    def cache_results(self, key, cont_name, result, config):
+    def read_df(self, filepath):
+        """ """
+        # stored as strings, invoke with eval(..) to avoid missing package errors
+        _reader = eval(_READERS.get(Path(filepath).suffix, '.csv'))
+        
+        try:
+            df = _reader(filepath)
+        except EmptyDataError:
+            df = pd.DataFrame()
+        
+        return df
+    
+    def write_df(self, df, outpath):
+        writer_method = getattr(df, _WRITERS.get(Path(outpath).suffix, 'to_csv'))
+        writer_method(outpath, index=False)
+        return True
+        
+    def cache_results(self, key, cont_name, result:pd.DataFrame, config):
         """ 
         save intermediate results to tempfolder, then load all and compile at end 
         
         returns: path to temp result
         """
+        OUTPUT_FILE_TYPE = config.get('OUTPUT_FILE_TYPE') or '.csv'
         assert self.tempfolder is not None
         ex_id = Path(config.path_to_example).stem
         cache_dir = ug.verify_outputdir(os.path.join(self.tempfolder, cont_name))
-        outpath = os.path.join(cache_dir, f"{cont_name}_{key}_{ex_id}.csv")
-        result = self.handle_writing_results_exceptions(key, result)
-        result.to_csv(outpath, index=False)
+        outpath = os.path.join(cache_dir, f"{cont_name}_{key}_{ex_id}{OUTPUT_FILE_TYPE}")
+        result = self.handle_writing_results_exceptions(key, result, config)
+        self.write_df(result, outpath)
         self.logger.debug(f'cache_results complete for container:{cont_name} key:{key}.')
         return outpath
         
@@ -102,13 +150,10 @@ class OutputHandler:
 
         for cont_name in self.main_container.keys():
             cache_dir = os.path.join(self.tempfolder, cont_name)
-            cache_contents = ug.get_contents(cache_dir)
+            cache_contents = ug.get_contents(cache_dir, _READER_SUFFIX_MATCH_PATTERN, pattern=True)
 
             for p in cache_contents:
-                try:
-                    df = pd.read_csv(p)
-                except EmptyDataError:
-                    df = pd.DataFrame()
+                df = self.read_df(p)
                 _temp_container[cont_name].append(df) 
             
         self.main_container = _temp_container
@@ -120,19 +165,33 @@ class OutputHandler:
 
     def concat_outputs(self, config):
         
+        if not config.WRITE_OUTPUT:
+            self.logger.info(f'WRITE_OUTPUT is False - skipping concat_outputs..')
+            return
         self.logger.info(f'concat_outputs started..')
+            
+        OUTPUT_FILE_TYPE = config.get('OUTPUT_FILE_TYPE') or '.csv'
         
         self.load_cached_results()
         
+        def _validate(iterable):
+            """ returns whether input is compatible with pd.concat(..) """
+            if isinstance(iterable, Iterable):
+                return all([[isinstance(el, pd.DataFrame) for el in iterable]])
+            return False
+        
         self.main_container =  {
-            k: pd.concat(v, ignore_index=False) for k,v in self.main_container.items()
+            k: (pd.concat(v, ignore_index=False) if _validate(v) else None) for k,v in self.main_container.items()
         }
         self.logger.info(f'merged outputs.')
         
         if config.WRITE_OUTPUT:
             for fn, df in self.main_container.items():
-                outpath = os.path.join(self.outdir_path, f"{fn}.csv")
-                df.to_csv(outpath, index=False)
+                if df is None:
+                    self.logger.warning(f'empty df in main_container encountered during WRITE_OUTPUT (main_container key: {fn})')
+                    continue
+                outpath = os.path.join(self.outdir_path, f"{fn}{OUTPUT_FILE_TYPE}")
+                self.write_df(df, outpath)
             self.logger.info(f'WRITE_OUTPUT completed.')
     
     def log_quant_config(self, proj, dispatchers, QUANT_CONFIG):
@@ -173,15 +232,18 @@ class OutputHandler:
             print(f'unable to log config\nerror: {e}')
 
     def log_colocal_ids(self, data):
-        
-        image_channels, clc_nuc_info = MetadataParser.get_imgdb_colocal_nuclei_info(data['metadata'])
-        imgdb = ImgDB(image_channels=image_channels, colocal_nuclei_info=clc_nuc_info)
-        clc_id_outpath = os.path.join(self.outdir_path, 'colocal_ids.yaml')        
-        write_config(imgdb.__dict__, clc_id_outpath)
+        try:
+            image_channels, clc_nuc_info = MetadataParser.get_imgdb_colocal_nuclei_info(data['metadata'])
+            imgdb = ImgDB(image_channels=image_channels, colocal_nuclei_info=clc_nuc_info)
+            clc_id_outpath = os.path.join(self.outdir_path, 'colocal_ids.yaml')        
+            write_config(imgdb.__dict__, clc_id_outpath)
+        except Exception as e:
+            self.logger.error(f"failed to log_colocal_ids, error:\n{e}")
 
     def print_main_container_head(self):
         for k,v in self.main_container.items():
-            self.logger.info(f"\ncontainer key:{k}\n{'#'*40}\n{v.head(5)}\n")
+            if isinstance(v, pd.DataFrame):
+                self.logger.info(f"\ncontainer key:{k}\n{'#'*40}\n{v.head(5)}\n")
 
     def attach_logger(self, logger):
         """ Logger setup using a shared logger or creates one if logger=None"""

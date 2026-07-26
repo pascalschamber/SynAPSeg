@@ -177,7 +177,7 @@ class ExampleDispatcher(DispatcherBase):
         # -------------------------------------------------------------
         if px_xy is not None:
             px_sizes = {'X': px_xy, 'Y': px_xy, 'Z': px_z or 1.0}
-            self.logger.info(f"setting PX_SIZES using ({px_sizes}) provided by config (PX_SIZE_XY, PX_SIZE_Z)")
+            # self.logger.debug(f"setting PX_SIZES using ({px_sizes}) provided by config (PX_SIZE_XY, PX_SIZE_Z)")
 
         # CASE 2: Use metadata-derived pixel sizes
         # -------------------------------------------------------------
@@ -187,7 +187,7 @@ class ExampleDispatcher(DispatcherBase):
                 scaling_dict = scaling_raw if isinstance(scaling_raw, dict) else ast.literal_eval(scaling_raw)  # handle if scaling is in string representation 
                 scaling_dict = {k: (v if isinstance(v, (int, float)) else 1) for k,v in scaling_dict.items()}   # sanitize scaling factors so None is converted to 1 
                 px_sizes= {dim: s * scale_factor for dim, s in scaling_dict.items()}
-                self.logger.info(f"setting PX_SIZES using self.exmd['image_metadata']['scaling'] ({scaling_raw}) and scale_factor ({scale_factor})")
+                # self.logger.debug(f"setting PX_SIZES using self.exmd['image_metadata']['scaling'] ({scaling_raw}) and scale_factor ({scale_factor})")
             except Exception as e:
                 self.logger.warning(f"failed to extract PX_SIZES from exmd scaling `{scaling_raw}`. All sizes will be in pixels.\nException:\n{e}")
 
@@ -196,7 +196,6 @@ class ExampleDispatcher(DispatcherBase):
 
     
         
-
 
     def handle_datashapes_formats(self):
         # TODO rename or split into funcs that describe init setup of missing file map kwargs as well
@@ -259,7 +258,7 @@ class ExampleDispatcher(DispatcherBase):
         self.logger.info(f"Example loaded successfully (elapsed time: {ug.dt()-self.start_time}).\n")
         return image_dict
 
-    def process_example(self, pipeline, data, outputHandler):
+    def process_example(self, pipeline, data, outputHandler) -> dict:
         """
         Processes the example through the quantification pipeline.
         
@@ -375,6 +374,7 @@ class ExampleDispatcher(DispatcherBase):
         Helper to get the current format of a data object via lookup in exmd or via shape inference.
         """
         if self.exmd['data_metadata']['data_formats'].get(key):
+            # TODO should do basic dim length check on fmt in md and array
             return self.exmd['data_metadata']['data_formats'][key]
         else:
             return uip.estimate_format(
@@ -805,6 +805,7 @@ class DispatcherCollection(DispatcherBase):
         for disp_i, ex_i in enumerate(examples_to_process):
             # copy config + include annotation subsets (if present)
             cc = self.config.copy()
+            cc.resolvers = [] # can't pickle lambda otherwise 
             cc['ex_i'] = ex_i
 
             try:
