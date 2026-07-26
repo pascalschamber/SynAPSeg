@@ -130,6 +130,22 @@ CACHE_INTERMEDIATE_RESULTS:
   tooltip: Whether to store outputs for each example in temp dir then compile, helpful if run gets interupted.
   heading: General Project Settings
 
+WRITE_COORDS:
+  default_value: False
+  widget_type: bool
+  tooltip: drop coords from output to reduce filesize bloat - unless otherwise specified.
+  heading: General Project Settings
+OUTPUT_FILE_TYPE:
+  default_value: .csv
+  widget_type: selection
+  value_options: ['.csv', '.xlsx', '.parquet']
+  tooltip: output filetype for compiled tabular data.
+  heading: General Project Settings
+DISPATCHER_SLICE:
+  default_value: [null, null]
+  widget_type: tuple
+  tooltip: execute pipeline on subset of dispatchers (default runs on all). must be iterable of length 2. values correspond to dispatchers index in the dispatcher collection
+  heading: General Project Settings
 
 EXTRACT_GROUPS:
   default_value: null

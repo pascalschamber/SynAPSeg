@@ -18,6 +18,9 @@ from SynAPSeg.Quantification.factory import QuantificationPluginFactory
 
 __output_data_vars__ = ['whole_rpdf', 'roi_df', 'summary_df']
 
+from SynAPSeg.Quantification.plugins import object_detection
+from SynAPSeg.Quantification.plugins import roi_handling
+from SynAPSeg.Quantification.plugins import colocalization
 
 # def find_stage_objects(directory=None):
 #     """
@@ -53,6 +56,28 @@ __output_data_vars__ = ['whole_rpdf', 'roi_df', 'summary_df']
 
 #     return stage_to_object
 
+import os
+from typing import Any, Dict, List
+
+from SynAPSeg.config import constants
+from SynAPSeg.Plugins.base import BasePluginFactory
+
+def get_QuantificationPluginFactory():
+    PLUGINS_DIRS = [
+        os.path.join(constants.SYNAPSEG_BASE_DIR, 'Quantification', 'plugins'), # system plugins
+        os.path.join(constants.SYNAPSEG_BASE_DIR, 'Plugins') # user plugins
+    ]
+    PLUGINS_DEFAULT_PARAMETERS_PATH = os.path.join(PLUGINS_DIRS[0], "default_parameters.yaml") # global default params that specifc modules may override
+    PLUGIN_BASE_CLASS = 'BasePipelineStage'
+    REQUIRED_SIGNAL = {'__plugin_group__': 'quantification'}
+    CORE_PLUGINS = ['roi_handling', 'object_detection', 'colocalization'] # display in this order
+    PLUGIN_PATTERN = '.*\.py$' # if filename.endswith(".py")
+
+    QuantificationPluginFactory = BasePluginFactory(
+        PLUGINS_DIRS, CORE_PLUGINS, PLUGINS_DEFAULT_PARAMETERS_PATH, PLUGIN_PATTERN, REQUIRED_SIGNAL
+    )
+    return QuantificationPluginFactory
+
 
 class Pipeline(BasePipelineComponent):
     """
@@ -66,8 +91,8 @@ class Pipeline(BasePipelineComponent):
         Initializes the pipeline with an ordered list of stages.
         """
         self.attach_logger(logger)
-        self.factory = QuantificationPluginFactory
-        self.discovered_plugins = list(self.factory.PLUGINS.keys())
+        factory = get_QuantificationPluginFactory()
+        self.discovered_plugins = list(factory.PLUGINS.keys())
 
         stages = config.PIPELINE_STAGE_NAMES
         assert isinstance(stages, list) and len(stages) > 0, f"ValueError 'config.PIPELINE_STAGE_NAMES': {stages}"
@@ -75,7 +100,7 @@ class Pipeline(BasePipelineComponent):
         self.stages = []
         for stage_name in stages:
             if stage_name in self.discovered_plugins:
-                stageObj = self.factory.get_plugin(stage_name, pipeline=self, logger=logger)
+                stageObj = factory.get_plugin(stage_name, pipeline=self, logger=logger)
                 self.stages.append(stageObj)
             else:
                 raise ValueError(f"Cannot find {stage_name} in {self.discovered_plugins}")
