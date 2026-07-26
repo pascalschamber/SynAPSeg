@@ -353,9 +353,14 @@ class MetadataParser:
         return merged_md
     
     @staticmethod
-    def archive_metadata(path_to_example):
+    def archive_metadata(path_to_example, error_on_fail=False):
         """ copy current `metadata.yml` file to `previous_metadata` folder, creating if needed """
-        
+        if not os.path.exists(os.path.join(path_to_example, 'metadata.yml')):
+            emsg = f'metadata.yml does not exist in example @ {path_to_example}'
+            if error_on_fail:
+                raise FileExistsError(emsg)
+            print(emsg)
+            return
         exmd_hist_dir = ug.verify_outputdir(os.path.join(path_to_example, '__archived__'))
         prev_exmd = MetadataParser.try_get_metadata(path_to_example)
         ts = ug.get_datetime()
@@ -483,8 +488,7 @@ class MetadataParser:
 # to incorporate into a example_metadata class with fixed querying attrs
 # TODO
 # also fix exmd key 'image_path' --> 'source_path'
-
-
+   
 
 
 # --- funcs for matching channel info ---
