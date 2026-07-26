@@ -238,7 +238,8 @@ def get_laser_settings_by_channel(czi, laserLinePattern = 'MTBLKM980LaserLine(\d
                 trackId = pc.attrib['Id']
                 intensity = pc.find('Intensity').text
                 laserLine = re.match(laserLinePattern, trackId).groups(1)[0]
-                print(trackId, intensity, laserLine)
+                print(trackId, intensity, laserLine) # MTBLKM980LaserLine405 0.2 405
+                
                 if trackId not in md_dict:
                     md_dict[trackId] = {'track_laser_settings':[]}
                 else:
@@ -252,16 +253,25 @@ def get_laser_settings_by_channel(czi, laserLinePattern = 'MTBLKM980LaserLine(\d
         gain = ch.find('DetectorSettings/Voltage').text
         lightSourceId = ch.find('LightSourcesSettings/LightSourceSettings/LightSource').attrib['Id']
         lightSourceWavelength = ch.find('LightSourcesSettings/LightSourceSettings/Wavelength').text
-        print(ch.attrib, gain, lightSourceId, lightSourceWavelength)
+        print(ch.attrib, gain, lightSourceId, lightSourceWavelength) # {'Id': 'Channel:0', 'Name': 'AF647-T1'} 600 MTBLKM980LaserLine639 639
         if lightSourceId not in md_dict:
             raise ValueError(lightSourceId, 'not in', md_dict)
         md_dict[lightSourceId]['channels'].append(ug.merge_dicts(ch.attrib, dict(zip(['gain'], [gain]))))
         ch_name = ch.attrib['Name']
         if ch_name in channels_dict:
             raise ValueError ('ch should not already exist')
-        channels_dict[ch_name] = {'gain':gain, 'intensity':md_dict[lightSourceId]['intensity']}
+        channels_dict[ch_name] = {'gain':_fmt_num(gain, 1), 'intensity':_fmt_num(md_dict[lightSourceId]['intensity'], 1)}
     return channels_dict
 
+def _fmt_num(val:int|float|str, ROUND=1):
+    v = float(val) 
+    if v > 10:
+        v = int(v)
+    else:
+        v = round(v, ROUND)
+    return v
+        
+        
 
 def print_czi_metadata(czi_filepath):
     # deprecated, might still work with other czi files

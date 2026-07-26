@@ -4,6 +4,77 @@ import numpy as np
 import matplotlib.pyplot as plt
 from typing import List, Tuple, Dict, Union, Optional
 
+def semantic_to_polygons_rasterio(sem_image):
+    """
+    Convert a 2D semantic segmentation image into polygon boundaries using
+    rasterio.features.shapes. This preserves exact pixel edges.
+    
+    Parameters
+    ----------
+    sem_image : np.ndarray
+        A 2D integer array of shape (H, W) where each pixel is a label.
+        E.g., 0 = background, 1 = object1, 2 = object2, etc.
+    
+    Returns
+    -------
+    polygons_dict : dict
+        Dictionary of the form: { label_value: [Polygon, Polygon, ...], ... }
+        Each label key maps to one or more Shapely Polygons representing
+        the regions of that label.
+    """
+    polygons_dict = {}
+    labels = np.unique(sem_image)
+
+    for label in labels:
+        # (Optional) Skip background label if you don't need it
+        if label == 0:
+            continue
+        
+        # Create a boolean mask for this label
+        mask = (sem_image == label)
+        
+        # shapes() yields (geom, val) pairs for the "True" region of the mask
+        #  - The first argument to shapes() is the raster (uint8 array),
+        #    which in this case is just the binary mask for the label.
+        #  - The `mask` parameter ensures we only polygonize the "True" region.
+        results = rasterio.features.shapes(mask.astype(np.uint8), mask=mask, transform=rasterio.Affine(1, 0, 0, 0, 1, 0))
+        
+        # Convert each GeoJSON-like geometry dict to a Shapely shape
+        region_polygons = []
+        for geom, value in results:
+            poly = shapely.geometry.shape(geom)
+            if not poly.is_empty:
+                region_polygons.append(poly)
+        
+        # Merge all polygon fragments into one or more polygons
+        if region_polygons:
+            merged = shapely.ops.unary_union(region_polygons)
+            
+            # merged could be a single Polygon or a MultiPolygon
+            if merged.geom_type == 'MultiPolygon':
+                polygons_dict[label] = list(merged.geoms)
+            else:
+                polygons_dict[label] = [merged]
+        else:
+            polygons_dict[label] = []
+
+    return polygons_dict
+
+
+def test_semantic_to_polygons_rasterio():
+    # Example usage
+    sem_image = np.array([
+        [1, 1, 0, 0, 0],
+        [1, 0, 0, 2, 2],
+        [1, 1, 1, 2, 2],
+        [0, 1, 1, 2, 2],
+        [0, 0, 0, 0, 0],
+    ], dtype=np.uint8)
+
+    polygons_per_label = semantic_to_polygons_rasterio(sem_image)
+    plot_polygons_over_image(sem_image, polygons_per_label)
+
+
 
 def sort_coordinates_by_distance(
     coordinates: Union[List[Tuple[float, float]], np.ndarray],
@@ -322,67 +393,6 @@ def assign_labels_to_object_indices(
 
 
 
-
-
-
-def semantic_to_polygons_rasterio(sem_image):
-    """
-    Convert a 2D semantic segmentation image into polygon boundaries using
-    rasterio.features.shapes. This preserves exact pixel edges.
-    
-    Parameters
-    ----------
-    sem_image : np.ndarray
-        A 2D integer array of shape (H, W) where each pixel is a label.
-        E.g., 0 = background, 1 = object1, 2 = object2, etc.
-    
-    Returns
-    -------
-    polygons_dict : dict
-        Dictionary of the form: { label_value: [Polygon, Polygon, ...], ... }
-        Each label key maps to one or more Shapely Polygons representing
-        the regions of that label.
-    """
-    polygons_dict = {}
-    labels = np.unique(sem_image)
-
-    for label in labels:
-        # (Optional) Skip background label if you don't need it
-        if label == 0:
-            continue
-        
-        # Create a boolean mask for this label
-        mask = (sem_image == label)
-        
-        # shapes() yields (geom, val) pairs for the "True" region of the mask
-        #  - The first argument to shapes() is the raster (uint8 array),
-        #    which in this case is just the binary mask for the label.
-        #  - The `mask` parameter ensures we only polygonize the "True" region.
-        results = rasterio.features.shapes(mask.astype(np.uint8), mask=mask, transform=rasterio.Affine(1, 0, 0, 0, 1, 0))
-        
-        # Convert each GeoJSON-like geometry dict to a Shapely shape
-        region_polygons = []
-        for geom, value in results:
-            poly = shapely.geometry.shape(geom)
-            if not poly.is_empty:
-                region_polygons.append(poly)
-        
-        # Merge all polygon fragments into one or more polygons
-        if region_polygons:
-            merged = shapely.ops.unary_union(region_polygons)
-            
-            # merged could be a single Polygon or a MultiPolygon
-            if merged.geom_type == 'MultiPolygon':
-                polygons_dict[label] = list(merged.geoms)
-            else:
-                polygons_dict[label] = [merged]
-        else:
-            polygons_dict[label] = []
-
-    return polygons_dict
-
-
-
 def plot_polygons_over_image(sem_image, polygons_dict):
     plt.figure(figsize=(12, 12))
     plt.imshow(sem_image, cmap="gray")
@@ -410,18 +420,7 @@ def plot_polygons_over_image(sem_image, polygons_dict):
 
 
 
-def test_semantic_to_polygons_rasterio():
-    # Example usage
-    sem_image = np.array([
-        [1, 1, 0, 0, 0],
-        [1, 0, 0, 2, 2],
-        [1, 1, 1, 2, 2],
-        [0, 1, 1, 2, 2],
-        [0, 0, 0, 0, 0],
-    ], dtype=np.uint8)
 
-    polygons_per_label = semantic_to_polygons_rasterio(sem_image)
-    plot_polygons_over_image(sem_image, polygons_per_label)
     
 
 

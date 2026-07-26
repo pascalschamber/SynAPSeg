@@ -1,16 +1,8 @@
 from __future__ import annotations
+from typing import List, Pattern, Union, Dict, Optional, Iterable
 import os
 from pathlib import Path
 import re
-import importlib
-from timeit import default_timer as timer
-from datetime import datetime
-from collections.abc import Iterable as IterableBaseClass
-from typing import List, Pattern, Union, Dict, Optional, Iterable
-import shutil
-import fnmatch
-from copy import deepcopy
-
 
 
 def verify_outputdir(adir, makedirs=False):
@@ -58,8 +50,7 @@ def get_prefix(
                 out = out[:out.rfind(exp)]
                 
     return out
-    
-    
+
 
 def get_matches(iterable: Iterable, filter_str: list|str, pattern=True, startswith=False, endswith=False) -> List[str]:
     """
@@ -97,7 +88,7 @@ def get_matches(iterable: Iterable, filter_str: list|str, pattern=True, startswi
     # apply match function
     matches = sorted([s for s in iterable if any(match_func(s, f) for f in filters)])
     return matches
-    
+
 def get_contents(adir, filter_str='', startswith=False, endswith=True, filetype=None, fail_on_empty=True, pattern=False, warn=True) -> List[str]:
     """
     Gets elements from directory content that match the string, or if filter_str is a list, checks if any string in the list matches. 
@@ -172,6 +163,49 @@ def get_contents_recursive(directory, filetype='', pattern=None, file_list=None)
             file_list.append(item_path)
 
     return file_list
+
+
+def resolve_pattern_path(
+    base_dir: Union[str, Path], 
+    pattern: str, 
+    strict: bool = True
+) -> Union[Path, list[Path]]:
+    """
+    Resolves a relative pattern (including wildcards and '..') against a base directory.
+        Note: this matches using Path.glob, not REGEX.
+
+    Args:
+        base_dir: The starting directory (e.g., path_to_example).
+        pattern: The relative path or glob pattern (e.g., "../exports/*.geojson").
+        strict: If True, raises an error unless exactly one match is found. 
+                If False, returns a list of all matches.
+
+    Returns:
+        A single Path object (if strict=True) or a list of Path objects (if strict=False).
+    
+    Usage:
+        base_dir = r"..\examples"
+        relative_pattern = "**/*3-8.geojson"
+        returns: ..\examples\0030_s0023\TEL30_s023_3-8.geojson
+    """
+    base_path = Path(base_dir).resolve()
+    
+    matches = list(base_path.glob(pattern))
+
+    if strict:
+        if not matches:
+            raise FileNotFoundError(
+                f"No files found matching pattern '{pattern}' in '{base_path}'"
+            )
+        if len(matches) > 1:
+            raise ValueError(
+                f"Strict mode enabled: Expected 1 match, found {len(matches)} for '{pattern}'."
+            )
+        return matches[0]
+
+    return matches
+
+
 
 
 def get_most_recent_file(
@@ -256,8 +290,6 @@ def filter_by_regex(strings: List[str],
     return [s for s in strings if test(s)]
 
 
-
-
 def insert_base_path(path_to_modify, base_path_to_insert):
     """
     Modifies a file path by replacing its base directory with a new base directory.
@@ -319,8 +351,6 @@ def looks_like_path(s, exists=False):
     return result
 
 
-
-
 def clean_path_name(filename, replacement="_"):
     import unicodedata
     
@@ -349,7 +379,6 @@ def clean_path_name(filename, replacement="_"):
         cleaned = f"file_{cleaned}" if cleaned else "unnamed_file"
 
     return cleaned
-
 
 
 def objdir(obj, skip_callable=True, return_as_string=False, return_as_dict=False, tabulated=False):
@@ -384,7 +413,7 @@ def objdir(obj, skip_callable=True, return_as_string=False, return_as_dict=False
         return outdict
     else:
         print(outstr)
-    
+
 
 def get_most_recent_folder(directory, sort_by="modified", return_all=False):
     """
@@ -424,8 +453,6 @@ def get_most_recent_folder(directory, sort_by="modified", return_all=False):
     if return_all: 
         return folders
     return os.path.basename(folders[0])  # Return the most recent folder's name
-
-
 
 
 IncludeType = Union[str, re.Pattern, Iterable[str]]
@@ -470,6 +497,8 @@ def copy_tree_selected(
     Returns:
         Number of files copied (or that would be copied in dry_run).
     """
+    import shutil
+    
     src = Path(src).resolve()
     dst = Path(dst).resolve()
 
@@ -539,6 +568,8 @@ def _build_regex_from_include(
     Returns:
       compiled re.Pattern
     """
+    import fnmatch
+    
     if isinstance(include, re.Pattern):
         return include
 
@@ -597,6 +628,7 @@ def _build_regex_from_include(
         return rx
 
     if glob_items:
+        
         glob_rx_parts = [_strip_anchors(fnmatch.translate(g)) for g in glob_items]
         parts.append(r"^(?:%s)$" % "|".join(glob_rx_parts))
 
@@ -608,10 +640,10 @@ def _build_regex_from_include(
     return re.compile(combined, flags)
 
 
-
-
 def get_datetime(fmt="%Y_%m%d_%H%M%S"):
     """returns current datetime as a str"""
+    from datetime import datetime
+    
     formatted_datetime = datetime.now().strftime(fmt)
     return formatted_datetime
 
@@ -686,6 +718,8 @@ def find_closest_and_remove(input_list, input_set):
         closest_matches (list): corresponding element from input_list
         unmatched (list): elements from input_list that were not matched
     """
+    from copy import deepcopy
+    
     input_list, input_set = deepcopy(input_list), deepcopy(input_set)
     output, closest_matches, unmatched = [], [], []
     for number in input_list:
@@ -741,6 +775,8 @@ def dt(f=None, *args, **kwargs):
     Returns:
     - float: Current time if `f` is None, else the elapsed time to execute `f` and the result.
     """    
+    from timeit import default_timer as timer
+    
     if f is None:
         return timer()
     else:
@@ -749,19 +785,20 @@ def dt(f=None, *args, **kwargs):
         end = timer()
         elapsed = end - start
         return elapsed, result
-    
-    
+
 
 def get_function(function_string: str):
     """
     use importlib to import a function from its string representation
     """
+    
     assert '.' in function_string, f'function_string: ({function_string}) could not be parsed because it does not contain module it comes from'
     # Split the module and function name
     module_name, function_name = function_string.rsplit('.', 1)
 
     # Dynamically import the module
-    module = importlib.import_module(module_name)
+    from importlib import import_module
+    module = import_module(module_name)
 
     # Get the function from the module
     function = getattr(module, function_name)
@@ -769,8 +806,10 @@ def get_function(function_string: str):
 
 def try_import(module_name: str, p=True):
     """ attempt import - like a try-except block """
+    from importlib import import_module
+    
     try:
-        return importlib.import_module(module_name)
+        return import_module(module_name)
     except Exception as e:
         if p: print(f"import of {module_name} failed. error: {e}")
         return None
@@ -782,12 +821,13 @@ def get_existant_path(paths: Iterable[str]|str, fail_on_empty=True):
             paths (list(str)): paths to check
             fail_on_empty (bool): if True will raise error if no existing paths are found
     """
+    from collections.abc import Iterable as IterableBaseClass
+    
     if isinstance(paths, str):
         paths = [paths]
 
     if not isinstance(paths, IterableBaseClass):
         raise ValueError(f"`paths` must be an iterable of strings, but got: `{paths}`.")
-
 
     for p in paths:
         if os.path.exists(p):
@@ -797,7 +837,6 @@ def get_existant_path(paths: Iterable[str]|str, fail_on_empty=True):
         raise FileNotFoundError(f"no existing paths found in: {paths}")
     
     return None
-    
 
 
 def dict_to_tabulated_rows(d, depth=0, tableformat='fancy_grid'):

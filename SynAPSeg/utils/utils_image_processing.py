@@ -1,19 +1,11 @@
+from typing import Optional, Tuple, Any, Iterable, Mapping, Union, Dict
 from tifffile import imread, imwrite, TiffFile
 import numpy as np
-import matplotlib.pyplot as plt
-import scipy
-from skimage import morphology
-
-from typing import Optional, Tuple, Any, Iterable, Mapping, Union, Dict
 import numba as nb
 from numba import cuda
-from skimage.measure import regionprops
-from skimage.segmentation import find_boundaries
+import scipy
+import skimage
 
-from SynAPSeg.utils import utils_colocalization as uc
-
-
-# import cv2   #!!! DO NOT USE CV2 FOR non-8bit IMAGES, does not read channels correctly
 
 def get_tiff_metadata(filepath: str, return_all: bool = False) -> dict:
     """
@@ -570,12 +562,13 @@ def mask_to_outlines(binary_mask):
     # bin mask to outlines
     sobel_h, sobel_v = scipy.ndimage.sobel(binary_mask, axis=0), scipy.ndimage.sobel(binary_mask, axis=1)
     magnitude = np.where(np.hypot(sobel_h, sobel_v) != 0, 1, 0).astype(int)
-    outline = morphology.skeletonize(magnitude)
+    outline = skimage.morphology.skeletonize(magnitude)
     return outline
 
 def correct_annotated_labels(sd_mask, ch_img, size_min=0):
     """correct annotations where same label was used in non-touching objects, where ndi.label fails to separate"""
     import scipy.ndimage as ndi
+    from SynAPSeg.utils.utils_colocalization import get_rp_table
         
     corrected_mask = np.zeros_like((sd_mask))
     unique_labels = np.unique(sd_mask)
@@ -586,7 +579,7 @@ def correct_annotated_labels(sd_mask, ch_img, size_min=0):
             continue
         labels, count = ndi.label(np.where(sd_mask==ul, 1, 0))
         ccc += count
-        rpdf, _ = uc.get_rp_table(labels, ch_img, ch_colocal_id={0:0}, prt_str='__')
+        rpdf, _ = get_rp_table(labels, ch_img, ch_colocal_id={0:0}, prt_str='__')
         for uni_l in np.unique(labels):
             if uni_l == 0: continue
             # size exclusion
@@ -698,6 +691,8 @@ def shrink_object_perimeters(
         A new label map of the same shape, with the same object IDs but
         “shrunken” where outer pixels were below threshold.
     """
+    from skimage.measure import regionprops
+    
     new_labels = np.zeros_like(label_image)
     props = regionprops(label_image, intensity_image)
 
@@ -758,7 +753,7 @@ def _shrink_single_label(
     # iteratively peel away boundary pixels below threshold
     mask = obj_mask.copy()
     for _ in range(iter_max):
-        boundary  = find_boundaries(np.pad(mask, 1), # without padding this fxn fails when object is fully flush with border
+        boundary  = skimage.segmentation.find_boundaries(np.pad(mask, 1), # without padding this fxn fails when object is fully flush with border
                                     mode=find_boundaries_mode,
                                     connectivity=connectivity)
         
@@ -787,13 +782,16 @@ def _bbox2slice(bbox):
 
 
 
-def read_img(img_path, fmt=None, collapse=False):
+def read_img(img_path, fmt=None, collapse=False) -> np.ndarray | tuple[np.ndarray, str]:
     """ 
     read image from path 
 
     args:
         fmt: string format of dims present in raw image
         collapse: if fmt is provided, standardize dim order and collapse singleton dims
+    
+    returns:
+        np.ndarray or (np.ndarray, str) if collapse == True
     
     """
     img = _imread(img_path)
@@ -804,6 +802,10 @@ def read_img(img_path, fmt=None, collapse=False):
 
 def _imread(img_path):
     """ helper function for loading tiffs or other types with PIL  """
+
+    # convert to string - e.g. to handle Path objects
+    img_path = str(img_path)
+
     # TODO move to image parser and handle different types 
     if img_path.endswith('.tif') or img_path.endswith('.tiff'):
         return imread(img_path)
@@ -909,57 +911,6 @@ def crop_or_pad(array, target_shape=(256, 256)):
     mins = np.minimum(np.array(array.shape), target_shape)
     result[:mins[0], :mins[1]] = array[:mins[0], :mins[1]]
     return result
-
-
-
-def segment_neurites(base_img, PLOT=False, n_objs=1, sigma=5, tophat_radius=15, norm_dict ={0: {'nmin': 1, 'nmax': 99.8}}, median_connectivity=2, median_iter=1, labels_binary_dilate = 7):
-    """
-    implementation of morphological filters to segement neurite branches
-    
-    Args:
-        base_img: input image
-        n_objs: take largest n objs
-        sigma: gaussian filter sigma
-        tophat_radius: tophat radius
-        norm_dict: normalization dict
-        median_connectivity: connectivity for median filter
-        median_iter: number of iterations for median filter
-        labels_binary_dilate: binary dilation for labels
-    """
-    import skimage
-    from scipy import ndimage as ndi
-    import SynAPSeg.utils.utils_plotting as up 
-    
-
-    median_struct = ndi.iterate_structure(ndi.generate_binary_structure(base_img.ndim, median_connectivity), median_iter)
-
-    pred_input_preproc = base_img.copy()
-    pred_input_preproc = skimage.filters.median(pred_input_preproc, footprint=median_struct)
-    pred_input_preproc = skimage.filters.gaussian(pred_input_preproc, sigma=(sigma, sigma), truncate=3.5)
-    # pred_input_preproc = bg_subtract_tophat(pred_input_preproc, tophat_radius=tophat_radius)
-
-    pred_input_preproc_norm, _ = normalize(pred_input_preproc, norm_dict)
-    pred_input_preproc_norm = np.clip(pred_input_preproc_norm, 0, 1)
-    
-    thresh = skimage.filters.threshold_triangle(pred_input_preproc_norm)
-    neurites_img = pred_input_preproc_norm>thresh
-    neurites_img = skimage.morphology.binary_dilation(neurites_img, footprint=np.ones((labels_binary_dilate,labels_binary_dilate)))
-    neurites_img = skimage.morphology.label(neurites_img).astype('int32')
-    
-    props = skimage.measure.regionprops(neurites_img)
-    largest_obj_area = max(props, key=lambda x: x.area).area
-    largest_label = max(props, key=lambda x: x.area).label
-
-    # Step 4: Create a mask for the largest n objects
-    mask = extract_largest_objects(neurites_img, n=n_objs)
-    
-    if PLOT:
-        fig,axs=plt.subplots(1,4, figsize=(20,10))
-        up.show(base_img, def_title='og_img', ax=axs[0])
-        up.show(pred_input_preproc_norm, def_title='pred_input_preproc_norm', ax=axs[1])
-        up.show(neurites_img, def_title=f'neurites_labeled_img (largest area:{largest_obj_area})', ax=axs[2])
-        up.show(base_img * to_binary(mask), def_title='neurites_int_img', ax=axs[3])
-    return mask
 
 
 def plot_all_threshold_methods(vol):
@@ -1213,7 +1164,7 @@ def find_extent(volume):
         raise ValueError("Only 2D or 3D arrays supported.")
 
 
-def find_extent_and_crop(volumes):
+def find_extent_and_crop(volumes:np.ndarray | list[np.ndarray], return_extent=False):
     """
     Finds the extent of a 2D or 3D image/volume where pixel values are > 0,
     and returns the cropped image(s) based on this extent.
@@ -1245,6 +1196,8 @@ def find_extent_and_crop(volumes):
         y0, y1, x0, x1 = extent
         cropped = [v[y0:y1+1, x0:x1+1] for v in vols]
     
+    if return_extent:
+        return (cropped if is_list else cropped[0], extent)
     return cropped if is_list else cropped[0]
         
 
@@ -2190,8 +2143,9 @@ def propagate_labels(volume, overlap_threshold=0.33):
                 propagated_label = next_label
                 next_label += 1
             else:
-                # get coordiates of this label, sort points by closest to this labels centroid                       
-                sorted_coordinates, used_centroid = uc.sort_coordinates_by_distance(non_zero_coords, None, 'euclidean')
+                # get coordiates of this label, sort points by closest to this labels centroid  
+                from SynAPSeg.utils.utils_colocalization import sort_coordinates_by_distance           
+                sorted_coordinates, used_centroid = sort_coordinates_by_distance(non_zero_coords, None, 'euclidean')
                 non_zero_coords = np.array(sorted_coordinates)
                 
                 # iterate over coordiates of this label, starting with point closest to this labels centroid

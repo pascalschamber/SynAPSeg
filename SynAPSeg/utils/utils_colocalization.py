@@ -2341,26 +2341,26 @@ def summarize_roi_array_properties(
     # run on bg alone and assign an unused label to background 
     roi_max_val = roi.max()
     roi_df_bg = get_rp_table(
-                np.where(roi==0, roi_max_val+1, 0), 
+                ((roi==0)*(roi_max_val+1)).astype('int32'), # mask background and assign dummy label
                 image, 
                 ch_axis = image_fmt.index('C') if 'C' in image_fmt else None, 
                 rps_to_get = rps_to_get,
-                get_object_coords=get_object_coords,
+                get_object_coords=get_object_coords,              # TODO, safe to also skip? also very slow
                 additional_props=additional_props,
                 # extra_properties=extra_properties,  # these props can be really slow on the bg (esp. uc.longest_path)
             )
     roi_df_bg.loc[roi_df_bg['label']==roi_max_val+1, 'label'] = 0 # re-assign background label to label 0
     
+    # run on labeled objects
     roi_df = get_rp_table(
-                roi,
-                # np.where(roi==0, roi_max_val+1, roi), # assign a label to background 
-                image, 
-                ch_axis = image_fmt.index('C') if 'C' in image_fmt else None, 
-                rps_to_get = rps_to_get,
-                get_object_coords=get_object_coords,
-                additional_props=additional_props,
-                extra_properties=extra_properties,
-            )
+        roi,
+        image, 
+        ch_axis = image_fmt.index('C') if 'C' in image_fmt else None, 
+        rps_to_get = rps_to_get,
+        get_object_coords=get_object_coords,
+        additional_props=additional_props,
+        extra_properties=extra_properties,
+    )
     
     # merge bg back in 
     roi_df = pd.concat([roi_df_bg, roi_df], ignore_index=True)

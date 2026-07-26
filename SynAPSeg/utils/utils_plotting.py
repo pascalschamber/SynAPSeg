@@ -63,11 +63,11 @@ def create_composite_image_with_colormaps(image, colormaps):
     Creates a composite image from a n-channel image using specified colormaps for each channel.
     
     Parameters:
-    image (numpy.ndarray): Input image of shape (512, 512, C).
+    image (numpy.ndarray): Input image of shape (Y, X, C).
     colormaps (list): A list of colormaps or color lists for each channel.
     
     Returns:
-    numpy.ndarray: Composite image of shape (512, 512, 3).
+    numpy.ndarray: Composite image of shape (Y, X, 3).
     """
     assert image.ndim == 3
     
@@ -655,7 +655,7 @@ def plot_image_hist(img):
 
 
 def show(
-    img,
+    img:np.ndarray | list[np.ndarray],
     ax=None,
     cmap=None,
     alpha=None,

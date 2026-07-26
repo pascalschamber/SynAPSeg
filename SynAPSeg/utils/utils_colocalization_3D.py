@@ -67,9 +67,9 @@ def _assign_by_max_overlap(overlap_counts, syn_labels):
 def map_synapses_to_dendrites_overlap(
     syn_labels: np.ndarray,
     den_labels: np.ndarray
-) -> tuple[dict[int, Optional[int]], dict]:
+) -> tuple[dict[int, int], dict]:
     """
-    Assign synapses to dendrites based on voxel overlap.
+    Assign synapses to dendrites based on voxel overlap. 
     
     Each synapse is assigned to the dendrite with the largest number of 
     overlapping voxels. Ties are broken by choosing the smallest dendrite label.
@@ -79,7 +79,7 @@ def map_synapses_to_dendrites_overlap(
         den_labels: 3D array (Z, Y, X) with dendrite instance labels (0=background)
     
     Returns:
-        mapping: dict mapping synapse_label -> dendrite_label (or None)
+        mapping: dict mapping synapse_label -> dendrite_label (or 0 if None)
         stats: dict with n_synapses, n_assigned, n_unassigned
     
     Complexity:
@@ -109,7 +109,7 @@ def map_synapses_to_dendrites_overlap(
     
     if len(den_unique) == 0:
         # No dendrites - all synapses unassigned
-        mapping = {int(s): None for s in syn_unique}
+        mapping = {int(s): 0 for s in syn_unique}
         stats = {
             "n_synapses": len(syn_unique),
             "n_assigned": 0,
@@ -130,15 +130,9 @@ def map_synapses_to_dendrites_overlap(
     assignments = _assign_by_max_overlap(overlap_counts, syn_unique)
     
     # Build mapping and stats
-    mapping = {}
-    n_assigned = 0
-    for i, syn_label in enumerate(syn_unique):
-        den_label = int(assignments[i])
-        if den_label > 0:
-            mapping[int(syn_label)] = den_label
-            n_assigned += 1
-        else:
-            mapping[int(syn_label)] = None
+    mapping = dict(zip(syn_unique, assignments))
+    
+    n_assigned = np.sum(assignments > 0)
     
     stats = {
         "n_synapses": len(syn_unique),
