@@ -1,7 +1,4 @@
 import os
-from pathlib import Path
-import sys
-
 
 
 # array dimension formats
@@ -38,19 +35,20 @@ USER_SETTINGS_PATH = os.path.join(SYNAPSEG_BASE_DIR, 'config', 'user_settings.ya
 
 # load from user settings if exists. otherwise create and fill with demo template
 SEG_CONFIG_PATH = os.path.join(SYNAPSEG_BASE_DIR, 'config', 'segmentation_config.yaml')
-SEG_DEFAULT_PARAMETERS_PATH = os.path.join(SYNAPSEG_BASE_DIR, 'config', 'segmentation_default_parameters.yaml')
-
 QUANT_CONFIG_PATH = os.path.join(SYNAPSEG_BASE_DIR, 'config', 'quantification_config.yaml')
+
+SEG_DEFAULT_PARAMETERS_PATH = os.path.join(SYNAPSEG_BASE_DIR, 'config', 'segmentation_default_parameters.yaml')
 QUANT_DEFAULT_PARAMETERS_PATH = os.path.join(SYNAPSEG_BASE_DIR, 'config', 'quantification_default_parameters.yaml')
+
+TRAIN_DATASET_CONFIG_PATH = os.path.join(SYNAPSEG_BASE_DIR, 'config', 'training_datasets_config.yaml')
 
 
 
 
 # USER SPECIFIC ENV VARS
 ###########################################################################################
-# these are just here to make them explicit 
+# these are here just to make them explicit 
 # they are set based on user_settings.yaml, after running IO.env.verify_and_set_env_dirs(), 
-# and can be accessed through constants.user.ROOT_DIR, etc.
 class user:
     keys = ['ROOT_DIR', 'PROJECTS_ROOT_DIR', 'MODELS_BASE_DIR']
     
