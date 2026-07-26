@@ -8,7 +8,7 @@ class DatasetNode:
         # store the backing dict
         super().__setattr__('_data', data)
 
-        self.keys = list(self._data.keys())
+        # self.keys = list(self._data.keys())
 
     def __getattr__(self, name):
         if name in self._data:
@@ -29,7 +29,30 @@ class DatasetNode:
         else:
             # fallback to normal setattr for other attributes
             super().__setattr__(name, value)
+    
+    def __getitem__(self, key):
+        """Allows getting items via bracket notation: node['key']"""
+        if key in self._data:
+            val = self._data[key]
+            # If it's a dict, wrap it in another DatasetNode (mirroring __getattr__)
+            if isinstance(val, dict):
+                return DatasetNode(val)
+            return val
+        # Standard dictionary behavior raises a KeyError, not AttributeError
+        raise KeyError(key)
 
+    def __setitem__(self, key, value):
+        """Allows setting items via bracket notation: node['key'] = value"""
+        self._data[key] = value
+        
+    def __delitem__(self, key):
+        """Allows deleting items via bracket notation: del node['key']"""
+        del self._data[key]
+
+    def __contains__(self, key):
+        """Allows using the 'in' operator efficiently: 'key' in node"""
+        return key in self._data
+    
     def __str__(self):
         """ str representation, with nested values expanded """
         asstr = ''
