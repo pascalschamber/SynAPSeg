@@ -1,13 +1,17 @@
+from typing import Optional
 import matplotlib.pyplot as plt
 import seaborn as sns
 import scipy
+import statsmodels
 import pandas as pd
 from tabulate import tabulate
 from enum import Enum
 import numpy as np
 
+from SynAPSeg.utils import utils_general as ug
 
-def batch_indSamples_test(df, value_cols:list[str], groupby_cols:list[str], treatment_col='treatment',  group1=None, group2=None):
+
+def batch_indSamples_test(df, value_cols:list[str], groupby_cols:Optional[list[str]]=None, treatment_col='treatment',  group1=None, group2=None):
     """ 
     unifying interface for batch running t-tests and mwu tests to compare two groups 
 
@@ -20,8 +24,7 @@ def batch_indSamples_test(df, value_cols:list[str], groupby_cols:list[str], trea
         group2 (str, optional): Defaults to None.
     
     """
-    from . import utils_general as ug
-    
+        
     def _run_stats(_df, value_cols:list[str], treatment_col='treatment',  group1=None, group2=None):
         
         results = []
@@ -98,9 +101,11 @@ class Significance(Enum):
 def sig_rep(pval):
     return Significance.from_pvalue(pval).stars
 
-def fmt_pval(p):
-    if p > 0.05: return round(p,2)
-    else: return f"{p:.2e}"
+def fmt_pval(p, dec=2):
+    if p > 0.05: 
+        return round(p,dec)
+    else: 
+        return f"{p:.{dec-1}e}"
 
 
 
@@ -446,3 +451,191 @@ def get_outliers_col(df, col_name):
     cs = df[col_name][ols]
     return cs
 
+
+
+# helper functions related to statsmodels api
+
+def calculate_ICC(model) -> float:
+    """
+    Calculate the Intraclass Correlation Coefficient (ICC). 
+    
+    Args:
+        model (statsmodels...mixedlm)
+    Usage example:
+        test whether measurements from the same mouse are correlated
+        ICC close to 0 --> variance between different mice is nearly zero
+    """
+    
+    # Extract the group  (random effect) and residual (scale) variance
+    group_var = model.cov_re.iloc[0, 0]
+    residual_var = model.scale
+    icc = group_var / (group_var + residual_var)
+    return icc
+
+
+
+def parse_model_summary(model_results, additional_data: Optional[dict]=None) -> dict:
+    """ 
+    parse statsmodel summary into clean dataframes
+    
+    args: 
+        model_results is value returned from model.fit() 
+    
+    returns:
+        {'model_summary':overview, 'coefficients': coeffs_data} if LMM or
+        {'model_summary':overview, 'coefficients': coeffs_data, 'residuals': residuals_data} if OLS
+    """
+    
+    
+    formula = model_results.model.formula
+    
+    html_summary = pd.read_html(model_results.summary().as_html())
+    if len(html_summary) not in [2,3]: 
+        raise ValueError('unhandled model html summary')
+    
+    # parse overview (index 0)
+    overview = pd.DataFrame([ug.merge_dicts(
+        {'formula':formula, **(additional_data or {})}, 
+        *[
+        dict(zip([el for el in html_summary[0][i].to_list() if not pd.isna(el)], 
+                 html_summary[0][i+1].to_list() )) 
+        for i in list(range(0, html_summary[0].shape[-1]//2+1, 2))
+        ] # iter even columns e.g. 0, 2 - assumes shape follows pattern col names, values, names, values, ...
+        
+    )])
+    
+    try:
+        dep_var = overview["Dependent Variable:"].iat[0]
+    except KeyError:
+        overview = overview.rename(columns={'Dep. Variable:':"Dependent Variable:"})
+        dep_var = overview["Dependent Variable:"].iat[0]
+    
+    coeffs_data = (
+        # reformat so columns are correctly inserted
+        pd.DataFrame(
+            data=html_summary[1].iloc[1:].values,
+            columns=html_summary[1].iloc[0,:].fillna('Comparison').to_list()
+        )
+        .assign(**{
+            # "formula": formula,
+            "Dependent Variable:":dep_var,
+            
+        })   
+    )
+    results = {'model_summary':overview, 'coefficients': coeffs_data}
+    
+    if len(html_summary) == 3: # parse residuals
+        residuals_data = (
+        # reformat so columns are correctly inserted
+        pd.DataFrame(
+            data=html_summary[2].iloc[1:].values,
+            columns=html_summary[2].iloc[0,:].fillna('Metric').to_list()
+        )
+        .assign(**{
+            # "formula": formula,
+            "Dependent Variable:":dep_var,
+            
+        })   
+        )
+    
+        residuals_data = residuals_data[["Dependent Variable:"] + [c for c in residuals_data.columns if c != "Dependent Variable:"] ]
+        results['residuals'] = residuals_data
+    
+    return results
+
+def save_model_summary(fitted_model, model_summary, outpath):
+    """ write parsed model summary to disk along with raw data """
+    assert str(outpath).endswith('.xlsx'), f"outpath invalid. Must end with .xlsx but got: {outpath}"
+    raw_data = fitted_model.model.data.frame
+    
+    with pd.ExcelWriter(outpath) as writer:
+        for k, df in model_summary.items():
+            df.to_excel(writer, sheet_name=k, index=False)
+        raw_data.to_excel(writer, sheet_name='Source_Data', index=False)   
+    print(f"Saved model summary to: {outpath}")
+
+def compare_models_AIC_BIC(models: list['statsmodels.base.model.Model']):
+    """
+    calculate difference in AIC (Akaike Information Criterion) and BIC (Bayesian Information Criterion)
+        for several models.
+    
+    Information:
+        These metrics measure how well the model explains the data but penalize adding more variables. 
+        A lower score means a better model.
+        Metric Rule of Thumb:
+            AIC favors fit, modest complexity penalty
+            BIC penalizes complexity more heavily
+
+    Example usage:
+        for DV in ['density', 'size', 'intensity_mean']:
+    
+            models = [
+                smf.mixedlm(f"{DV} ~ age * sex + acronym", data=df, groups=df["animal_number"]),
+                smf.mixedlm(f"{DV} ~ age * sex * acronym", data=df, groups=df["animal_number"]),
+                smf.mixedlm(f"{DV} ~ age * sex + (age * acronym)", data=df, groups=df["animal_number"]),
+            ]
+            
+            result_summary, results_data = compare_models_AIC_BIC(models)
+            print(f"{DV}\n{result_summary}\n")
+        >>>
+        density
+        AIC values: [3032, 3057, 3047] diff=(-25) --> favors: m[0] (density ~ age * sex + acronym)
+        BIC values: [3081, 3201, 3128] diff=(-120) --> favors: m[0] (density ~ age * sex + acronym)
+
+        size
+        AIC values: [507, 535, 523] diff=(-28) --> favors: m[0] (size ~ age * sex + acronym)
+        BIC values: [556, 679, 603] diff=(-123) --> favors: m[0] (size ~ age * sex + acronym)
+
+        intensity_mean
+        AIC values: [2064, 2072, 2059] diff=(-5) --> favors: m[2] (intensity_mean ~ age * sex + (age * acronym))
+        BIC values: [2113, 2216, 2140] diff=(-103) --> favors: m[0] (intensity_mean ~ age * sex + acronym)
+    """
+    
+    index_vals = [f"m[{i}] ({m.formula})" for i,m in enumerate(models)]
+    
+    fitted = [m.fit(reml=False) for m in models]
+    
+    
+    def get_smallest_diff(vals):
+        best = np.argmin(vals) # get idx's
+        if len(vals) == 2:
+            second = np.argmax(vals)
+        else:
+            second = np.argmin([v for i, v in enumerate(vals) if i != best])
+        diff = np.diff([vals[second], vals[best]])[0]
+        return diff
+    
+    aic_vals = [int(fit.aic) for fit in fitted]
+    aic_diff = get_smallest_diff(aic_vals)
+    
+    bic_vals = [int(fit.bic) for fit in fitted]
+    bic_diff = get_smallest_diff(bic_vals)
+    aic_verdict = f"favors: {index_vals[np.argmin(aic_vals)]}" if aic_diff != 0 else 'models are identical'
+    bic_verdict = f"favors: {index_vals[np.argmin(bic_vals)]}" if bic_diff != 0 else 'models are identical'
+    
+    result_summary = f"AIC values: {aic_vals} diff=({aic_diff}) --> {aic_verdict}\n" 
+    result_summary += f"BIC values: {bic_vals} diff=({bic_diff}) --> {bic_verdict}"
+    results_data = [index_vals, aic_vals, bic_vals]
+    return result_summary, results_data
+
+def rm_corr(df, X, Y, subject, groupby, p=True):
+    """ Calculate repeated measures correlation """
+    from pingouin import rm_corr as pg_rm_corr
+    results, stats_summary = pd.DataFrame(columns=['group', 'comparison', 'r', 'dof', 'pval', 'CI95%', 'power']), []
+    for grp, adf in df.groupby(groupby):
+        rm_corr_results = pg_rm_corr(
+            data=adf, 
+            x=X, 
+            y=Y, 
+            subject=subject
+        )
+        _grp = grp[0] if len(grp) == 1 else grp
+        rm_corr_results['group'] = _grp
+        rm_corr_results['comparison'] = f"{Y} ~ {X}"
+        results = pd.concat([results, rm_corr_results], ignore_index=True)
+        
+        st_sum_str = f"{_grp}: r={rm_corr_results.loc['rm_corr', 'r']:.4f} (p={rm_corr_results.loc['rm_corr', 'pval']:.4f})"
+        stats_summary.append(st_sum_str)
+        if p:
+            print(st_sum_str)
+    return results, stats_summary
