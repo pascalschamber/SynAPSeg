@@ -27,6 +27,7 @@ from SynAPSeg.UI.widgets.projectManager import ProjectManager, ProjectSelectionD
 from SynAPSeg.UI.widgets.control import handle_app_reset
 from SynAPSeg.UI.widgets import style_sheets
 
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'True' # TODO: debug this, it is not mkl causing the issue, think it is the tensorflow or pytorch package import order. 
 
 # params
 ##############################################################################
