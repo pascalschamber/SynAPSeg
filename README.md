@@ -19,22 +19,22 @@ We provide a full walkthrough of how to install and use SynAPSeg in the followin
 ## Installation
 
 ### Prerequisites
-* [Conda/miniconda](https://docs.conda.io/en/latest/miniconda.html) or another python package manager:
+* [Conda/miniconda](https://docs.conda.io/en/latest/miniconda.html) or another python package manager.
 * If using a GPU, ensure your system meets the hardware and software requirements. TensorFlow provides a good guide of the [system requirements](https://www.tensorflow.org/install/pip#hardware_requirements).
 
 
 ### Setup Instructions
 
-1) Download the [repository](https://github.com/pascalschamber/SynAPSeg/archive/refs/heads/main.zip) from GitHub, unzip, and save to desired location.
+1) Download this [repository](https://github.com/pascalschamber/SynAPSeg/archive/refs/heads/main.zip) from GitHub and unzip. It's recommended to save it somewhere central on your computer where you can easily find it and where it won't be moved.
 
 *complete the rest of the steps in your computer's terminal application*
 
-2) Navigate to the directory where the repository was downloaded/cloned on your computer, for example:  
+2) Run the command `cd` to navigate to the directory where the repository was downloaded/unzipped, for example:  
      
     ```bash
     cd "C:\Program Files\SynAPSeg-main"
     ```
-    *note: this is just an example, the path will depend on where you saved it*
+    *note: this is just an example, the path will depend on where you saved/unzipped the repository*
 
 
 3) Set up the conda environment based on your hardware. Run **one** of the following:
