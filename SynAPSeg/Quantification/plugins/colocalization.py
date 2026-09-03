@@ -104,6 +104,7 @@ class ColocalizationStage(BasePipelineStage):
         # Infer image channel mapping
         image_channels, clc_nuc_info = MetadataParser.get_imgdb_colocal_nuclei_info(md)
         imgdb = ImgDB(image_channels=image_channels, colocal_nuclei_info=clc_nuc_info)
+        data['colocalization_info'] = imgdb.__dict__ 
 
         self.logger.info(
             f"Performing colocalization with the following channel mapping:\n{pprint.pformat(imgdb.colocal_ids, indent=4)}")

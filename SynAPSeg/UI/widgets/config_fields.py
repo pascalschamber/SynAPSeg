@@ -564,10 +564,13 @@ class DictIntStrField(BaseConfigField):
     """Widget for dict[int, str] mapping."""
     def __init__(self, default_value=None, **kwargs):
         super().__init__(default_value=default_value or {}, **kwargs)
+        self.key_label_text = kwargs.get("key_label_text", "Key (Int):")
+        self.value_label_text = kwargs.get("value_label_text", "Val (Str):")
+        
         container = QWidget()
         self.layout = QVBoxLayout(container)
         
-        self.add_btn = QPushButton("+ Add Entry (Int -> Str)")
+        self.add_btn = QPushButton("+ Add Entry")
         self.add_btn.clicked.connect(lambda: self.add_row())
         self.layout.addWidget(self.add_btn)
 
@@ -591,10 +594,10 @@ class DictIntStrField(BaseConfigField):
         del_btn = QPushButton("✕")
         del_btn.setFixedSize(20, 20)
         del_btn.clicked.connect(lambda: (self.rows_layout.removeWidget(row), row.deleteLater(), self.value_changed.emit()))
-
-        l.addWidget(QLabel("Key (Int):"))
+        
+        l.addWidget(QLabel(self.key_label_text))
         l.addWidget(k_inp)
-        l.addWidget(QLabel("Val (Str):"))
+        l.addWidget(QLabel(self.value_label_text))
         l.addWidget(v_inp)
         l.addWidget(del_btn)
         

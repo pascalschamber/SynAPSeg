@@ -32,7 +32,7 @@ predict_kwargs:
     tooltip: set to True to run 3D segmentation on 3D/4D image input. Defaults to False.
     group: predict_kwargs
   flow_threshold: 
-    default_value: 0.6
+    default_value: 0.4
     widget_type: float
     tooltip: Flow threshold for prediction
     group: predict_kwargs

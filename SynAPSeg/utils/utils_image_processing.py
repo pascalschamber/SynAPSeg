@@ -3,7 +3,6 @@ from tifffile import imread, imwrite, TiffFile
 import numpy as np
 import numba as nb
 from numba import cuda
-import scipy
 import skimage
 
 
@@ -16,8 +15,7 @@ def get_tiff_metadata(filepath: str, return_all: bool = False) -> dict:
         dict: metadata of the tiff file
             e.g. {'axes': 'STCZYX', 'shape': [2, 5, 3, 10, 256, 256], ...}
     """
-    from tifffile import TiffFile
-
+    
     with TiffFile(filepath) as tiff:
         if tiff.shaped_metadata is not None:
             
@@ -85,6 +83,55 @@ def get_tiff_dtype(path):
     """ Get the dtype of a TIFF image without loading whole array into memory. """
     with TiffFile(path) as tif:
         return tif.series[0].dtype  # dtype of the first image series
+
+
+def get_png_shape(file_path: str) -> tuple[int, int, int]:
+    """
+    Get the shape of a PNG image without loading whole array into memory
+        Reads only the header of a PNG file to determine its shape.
+    Returns: 
+        tuple[int, int, int]: (height, width, channels)
+    """
+    import struct
+    
+    with open(file_path, 'rb') as f:
+        # 1. Read and verify the 8-byte PNG signature
+        if f.read(8) != b'\x89PNG\r\n\x1a\n':
+            raise ValueError("Not a valid PNG file.")
+
+        # 2. Skip the 4-byte chunk length (IHDR is always 13 bytes)
+        f.read(4)
+
+        # 3. Verify the chunk type is IHDR
+        if f.read(4) != b'IHDR':
+            raise ValueError("Missing or misplaced IHDR chunk.")
+
+        # 4. Read the 13-byte IHDR chunk data
+        ihdr = f.read(13)
+
+        # 5. Unpack Width (4 bytes) and Height (4 bytes)
+        # PNG uses Big-Endian byte order, which is why we use ">II"
+        width, height = struct.unpack(">II", ihdr[0:8])
+        
+        # Byte index 9 in IHDR contains the Color Type
+        color_type = ihdr[9]
+        
+        # 6. Determine the number of channels based on the PNG specification
+        color_to_channels = {
+            0: 1,  # Grayscale
+            2: 3,  # RGB (Truecolor)
+            3: 1,  # Indexed-color (Palette) - Stores 1 channel of indices
+            4: 2,  # Grayscale + Alpha
+            6: 4   # RGBA (Truecolor + Alpha)
+        }
+        
+        channels = color_to_channels.get(color_type)
+        if channels is None:
+            raise ValueError(f"Unknown PNG color type: {color_type}")
+
+        # Return in the standard machine-learning / math axis order
+        return (height, width, channels)
+    
 
 def to_binary(arr: np.ndarray, thresh=None):
     """convert image to binary integer array (e.g. float32 arr in range 0,1 )
@@ -560,7 +607,8 @@ def _extract_largest_object(segmented_image):
 def mask_to_outlines(binary_mask):
     """convert binary mask to outlines using sobel filter"""
     # bin mask to outlines
-    sobel_h, sobel_v = scipy.ndimage.sobel(binary_mask, axis=0), scipy.ndimage.sobel(binary_mask, axis=1)
+    from scipy.ndimage import sobel
+    sobel_h, sobel_v = sobel(binary_mask, axis=0), sobel(binary_mask, axis=1)
     magnitude = np.where(np.hypot(sobel_h, sobel_v) != 0, 1, 0).astype(int)
     outline = skimage.morphology.skeletonize(magnitude)
     return outline
@@ -1069,7 +1117,6 @@ def unpack_array_axis(arr, axis=0):
 
 
 try:
-    import numba as nb
     @nb.njit
     def numba_label(input):
         structuring_element = np.array([[0, 1, 0],
@@ -2103,6 +2150,7 @@ def propagate_labels(volume, overlap_threshold=0.33):
     Returns:
         np.ndarray: 3D volume with propagated labels for consistent object tracking along the z-axis.
     """
+    import scipy
     
     # Get the dimensions of the volume
     Z, Y, X = volume.shape
@@ -2978,8 +3026,8 @@ def fill_outline_labels(labels: np.ndarray, connectivity: int = 1) -> np.ndarray
     return out
 
 
-import numpy as np
-from scipy import ndimage
+
+
 
 def check_unique_object_labels(labeled_image, connectivity=1):
     """

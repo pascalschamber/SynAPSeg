@@ -941,7 +941,7 @@ def load_geojson_objects(geojson_path, filter_ABBA_region_features=True, feature
         allobjects = geojson.load(f)
     allfeatures = allobjects['features']
     if len(allfeatures)==0: 
-        raise ValueError(f"no features loaded")
+        raise ValueError(f"no features loaded. Is file empty?")
     
     if feature_filter_condition is not None:
         allfeatures = [obj for obj in allfeatures if feature_filter_condition(obj)]

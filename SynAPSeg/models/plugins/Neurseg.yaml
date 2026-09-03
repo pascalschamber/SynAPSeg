@@ -8,7 +8,7 @@ model_path:
 
 load_model_kwargs:
   backbone:
-    default_value: null
+    default_value: densenet201
     widget_type: str
     tooltip: "Backbone architecture used in the model."
     group: load_model_kwargs

@@ -5,7 +5,9 @@ from typing import Optional
 import sys
 from rich.logging import RichHandler
 
-def setup_default_logger(name):
+from logging import Logger # ref to logging object class
+
+def setup_default_logger(name) -> Logger:
     logger = logging.getLogger(name)
     if not logger.handlers:
         handler = RichHandler(

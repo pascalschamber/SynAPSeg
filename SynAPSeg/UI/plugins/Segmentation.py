@@ -16,7 +16,7 @@ from pprint import pformat
 
 from SynAPSeg.config import constants
 from SynAPSeg.IO.env import verify_and_set_env_dirs
-from SynAPSeg.IO.BaseConfig import BaseConfig, update_header_spec_values, prepend_config_key 
+from SynAPSeg.IO.BaseConfig import BaseConfig, prepend_config_key 
 from SynAPSeg.Segmentation.config_parser import get_schema_interpreter, get_merged_values, get_interpreter_run_config
 from SynAPSeg.utils import utils_general as ug
 

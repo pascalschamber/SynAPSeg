@@ -39,63 +39,6 @@ def update_format(current_format, removed_axes=''):
     return current_format
 
 
-def create_parser( 
-                    file_path: str, 
-                    params: Optional[dict]=None, 
-                    load_kwargs: Optional[dict]=None
-):
-    """
-    Factory call to create the appropriate image parser
-        based on regex patterns that match the end of the file path.
-    Args:
-        file_path: path to image file
-        
-        load_kwargs: parser specific load kwargs -> passed to parser.load_image()
-            - scene_name if multiscene file
-            
-        params: TODO consider refactoring, this is mix of run_config, example_metadata better to separate config args from metadata 
-            expects keys:
-                - data_metadata
-                    - input_image_format
-                    - channel_info
-                    
-            optional keys:
-                MIN_Z
-                VALID_SHAPE_T
-                VALID_SHAPE_S
-                SKIP_FORMAT_MISMATCHES
-
-            sets:
-                - current_format: output fmt, after running parser.validate_shape()
-                - image_metadata: created during image_parser.run(), has keys: 
-                    - init_image_format_target
-                    - 'ch_wavelengths': {},
-                    - 'zooms': None,
-                    - 'mag': None,
-                    - 'shape': None,
-                    - etc..
-    TODO:
-        make params optionally unless using in seg pipeline
-    """
-    
-    parsers = {
-        r"\.czi$": CZIImageParser,
-        r"\.(tiff|tif)$": TIFFImageParser,   # TODO this is going to intercept OME.TIFFs but may want to actually read them with the aicsimgio lib
-        r"\..*$": _determine_general_parser(),          
-        # r"\.ims$": IMSImageParser,  # TODO, not currently implemented
-    }
-
-    for pattern, parser_cls in parsers.items():
-        if re.search(pattern, file_path, flags=re.IGNORECASE):
-            return parser_cls(file_path, params=params, load_kwargs=load_kwargs)
-    
-    parser_cls = _determine_general_parser()
-    
-    try:
-        return parser_cls(file_path, params=params, load_kwargs=load_kwargs)
-    except Exception as e:
-        raise  ValueError (f"no suitable parser could be created based on image path: {file_path}") from e
-
 
 class ImageParser(ABC):
     """
@@ -324,6 +267,63 @@ class ImageParser(ABC):
         uip.print_array_info(arr)
         return arr, arr_mip
 
+
+def create_parser( 
+    file_path: str, 
+    params: Optional[dict]=None, 
+    load_kwargs: Optional[dict]=None
+    ) -> ImageParser:
+    """
+    Factory call to automatically initialize the appropriate image parser
+        based on regex patterns that match the end of the file path.
+    Args:
+        file_path: path to image file
+        
+        load_kwargs: parser specific load kwargs -> passed to parser.load_image()
+            - scene_name if multiscene file
+            
+        params: TODO consider refactoring, this is mix of run_config, example_metadata better to separate config args from metadata 
+            expects keys:
+                - data_metadata
+                    - input_image_format
+                    - channel_info
+                    
+            optional keys:
+                MIN_Z
+                VALID_SHAPE_T
+                VALID_SHAPE_S
+                SKIP_FORMAT_MISMATCHES
+
+            sets:
+                - current_format: output fmt, after running parser.validate_shape()
+                - image_metadata: created during image_parser.run(), has keys: 
+                    - init_image_format_target
+                    - 'ch_wavelengths': {},
+                    - 'zooms': None,
+                    - 'mag': None,
+                    - 'shape': None,
+                    - etc..
+    TODO:
+        make params optionally unless using in seg pipeline
+    """
+    
+    parsers = {
+        r"\.czi$": CZIImageParser,
+        r"\.(tiff|tif)$": TIFFImageParser,   # TODO this is going to intercept OME.TIFFs but may want to actually read them with the aicsimgio lib
+        r"\..*$": _determine_general_parser(),          
+        # r"\.ims$": IMSImageParser,  # TODO, not currently implemented
+    }
+
+    for pattern, parser_cls in parsers.items():
+        if re.search(pattern, file_path, flags=re.IGNORECASE):
+            return parser_cls(file_path, params=params, load_kwargs=load_kwargs)
+    
+    parser_cls = _determine_general_parser()
+    
+    try:
+        return parser_cls(file_path, params=params, load_kwargs=load_kwargs)
+    except Exception as e:
+        raise  ValueError (f"no suitable parser could be created based on image path: {file_path}") from e
 
 class IMSImageParser(ImageParser):
     """

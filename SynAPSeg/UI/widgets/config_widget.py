@@ -297,11 +297,11 @@ class PluginManagerWidget(QWidget):
         # Generate default specs
         init_params = {model_name: {'name': model_name, self.plugin_class_key: model_class}} 
         model_config_list = self.plugin_factory.build_spec_from_user_config(init_params, update_default_values=True)
-        print('\n\model_config_list specs')
-        for k,v in model_config_list.items():
-            for kk, vv in v.items():
-                for kkk, vvv in vv.items():
-                    print(kkk, vvv['current_value'])
+        # print('\n\model_config_list specs')
+        # for k,v in model_config_list.items():
+        #     for kk, vv in v.items():
+        #         for kkk, vvv in vv.items():
+        #             print(kkk, vvv['current_value'])
             
 
         # Wrap in scope structure

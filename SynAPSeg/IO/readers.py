@@ -657,3 +657,53 @@ class PyramidOMEReader:
         # Even if parsed, keep the raw for reference
         summary["ome_xml_raw_present"] = True
         return summary
+
+
+
+import struct
+
+def get_png_shape(filepath):
+    """
+    Reads only the header of a PNG file to determine its shape.
+    Returns: (height, width, channels)
+    """
+    with open(filepath, 'rb') as f:
+        # 1. Read and verify the 8-byte PNG signature
+        if f.read(8) != b'\x89PNG\r\n\x1a\n':
+            raise ValueError("Not a valid PNG file.")
+
+        # 2. Skip the 4-byte chunk length (IHDR is always 13 bytes)
+        f.read(4)
+
+        # 3. Verify the chunk type is IHDR
+        if f.read(4) != b'IHDR':
+            raise ValueError("Missing or misplaced IHDR chunk.")
+
+        # 4. Read the 13-byte IHDR chunk data
+        ihdr = f.read(13)
+
+        # 5. Unpack Width (4 bytes) and Height (4 bytes)
+        # PNG uses Big-Endian byte order, which is why we use ">II"
+        width, height = struct.unpack(">II", ihdr[0:8])
+        
+        # Byte index 9 in IHDR contains the Color Type
+        color_type = ihdr[9]
+        print(color_type)
+
+        # 6. Determine the number of channels based on the PNG specification
+        color_to_channels = {
+            0: 1,  # Grayscale
+            2: 3,  # RGB (Truecolor)
+            3: 1,  # Indexed-color (Palette) - Stores 1 channel of indices
+            4: 2,  # Grayscale + Alpha
+            6: 4   # RGBA (Truecolor + Alpha)
+        }
+        
+        channels = color_to_channels.get(color_type)
+        if channels is None:
+            raise ValueError(f"Unknown PNG color type: {color_type}")
+
+        # Return in the standard machine-learning / math axis order
+        return (height, width, channels)
+
+

@@ -1,20 +1,12 @@
-from aicsimageio import AICSImage
 import numpy as np
 import os
-import xml
 import pandas as pd
-import ast
-import re
-import scipy.ndimage as ndi
-from tqdm import tqdm
-import copy
-
-    
-from . import utils_general as ug
+from SynAPSeg.utils import utils_general as ug
 
 
 def read_czi(image_path):
     ''' load czi image and extract scene ids (number of images) '''
+    from aicsimageio import AICSImage
     from _aicspylibczi import PylibCZI_CDimCoordinatesOverspecifiedException
 
     try:
@@ -34,13 +26,14 @@ def czi_scene_to_array(
         czi_fmt_str="STCZYX", 
         czi_fmt_timepoint=None, # deprecated
         czi_fmt_slice=None, 
-        ch_last=True, rotation=None, bgr2rgb=False, moveax=None):
+        ch_last=True, rotation=None, bgr2rgb=False, moveax=None) -> np.ndarray:
     ''' extract a image data from a czi file, and convert to numpy array '''
     czi_img.set_scene(scene_i)
     slic = get_slice_from_string(czi_fmt_slice) if czi_fmt_slice is not None else None
     arr = czi_img.get_image_data(czi_fmt_str)[slic]
     if rotation is not None:
-        arr = ndi.rotate(arr, rotation, axes=(2,1), reshape=False, order=0, prefilter=False)
+        from scipy.ndimage import rotate
+        arr = rotate(arr, rotation, axes=(2,1), reshape=False, order=0, prefilter=False)
     if bgr2rgb:
         arr = np.stack([arr[i] for i in [2,1,0]], 0)
     arr = np.moveaxis(arr, 0, -1) if ch_last else arr # reshape so channels last
@@ -65,9 +58,11 @@ def print_keys_from(d, keys, prefix=''):
 
 def czi_metadata2xmlFile(md, outpath='czimetadata.xml'):
     """ write metadata to xml file. md can be accessed through czi.metadata attribute"""
-    assert isinstance(md, xml.etree.ElementTree.Element)
+    import xml.etree.ElementTree as ET
+    
+    assert isinstance(md, ET.Element)
     with open(outpath, 'w') as f:
-        f.write(xml.etree.ElementTree.tostring(md, encoding='unicode'))
+        f.write(ET.tostring(md, encoding='unicode'))
 
 
     
@@ -226,6 +221,8 @@ def get_channel_ex_detect_wavelength(chan_metadata):
 
 
 def get_laser_settings_by_channel(czi, laserLinePattern = 'MTBLKM980LaserLine(\d+)'):
+    import re
+    
     md_str = 'Metadata/Experiment/ExperimentBlocks/AcquisitionBlock/SubDimensionSetups/MultiTrackSetup/Track'
     md_dict = {}
     for track_i, track in enumerate(czi.metadata.findall(md_str)):
@@ -275,6 +272,7 @@ def _fmt_num(val:int|float|str, ROUND=1):
 
 def print_czi_metadata(czi_filepath):
     # deprecated, might still work with other czi files
+    from aicsimageio import AICSImage
     c = AICSImage(czi_filepath)
     md = c.ome_metadata.dict()
     images_metadata = md['images']
@@ -319,6 +317,10 @@ def compile_czi_metadata(paths) -> pd.DataFrame:
         dataframe containing metadata for each czi file
     
     """    
+    from tqdm import tqdm
+    from ast import literal_eval
+    from aicsimageio import AICSImage
+        
     mds = []
     for image_path in tqdm(paths, desc="Compiling CZI files", unit="file"):
         fn = os.path.basename(image_path)
@@ -329,13 +331,13 @@ def compile_czi_metadata(paths) -> pd.DataFrame:
             md = extract_metadata(czi)
             
             # explode scaling dict
-            scaling = ast.literal_eval(md.pop('scaling'))
+            scaling = literal_eval(md.pop('scaling'))
             md[f"scaling_unit"] = 'μm'
             for k,v in scaling.items():
                 md[f"scaling_{k}"] = v * 1e6 # convert to μm
             
             # explode shape 
-            shape = ast.literal_eval(md.pop('shape'))
+            shape = literal_eval(md.pop('shape'))
             shape_order = czi.dims.order
             for i, s in enumerate(shape):
                 md[f"{shape_order[i]}"] = s
@@ -399,7 +401,8 @@ def read_czi_multifilescenes_mosiac(czi_path, get_dims = 'STCZYX'):
 
 
 if __name__ == '__main__':
-    
+    import re
+        
     # test compile_czi_metadata
     #########################################################################################
     img_dir = r"\\rstore.it.tufts.edu\tusm_bygravelab01$\Confocal data archive\Pascal\tests"

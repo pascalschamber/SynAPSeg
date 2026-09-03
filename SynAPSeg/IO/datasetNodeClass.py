@@ -57,9 +57,9 @@ class DatasetNode:
         """ str representation, with nested values expanded """
         asstr = ''
         for k,v in self._data.items():
-            asstr += (f"{k}")
+            asstr += (f"{k}: ")
             v = flatten_dict(v,sep='.') if isinstance(v,dict) else v
-            asstr += (f"{pprint.pformat(v, indent=2, compact=True)}")
+            asstr += (f"{pprint.pformat(v, indent=2, compact=True)}\n")
         return asstr
 
     def __repr__(self):

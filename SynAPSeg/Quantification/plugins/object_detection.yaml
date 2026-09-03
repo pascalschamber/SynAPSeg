@@ -39,9 +39,9 @@ GET_CLC_ID_CH_INTENSITIES:
     key_type: int       # dict[int, list[int]]
     
   tooltip: |
-    Extract intensity from target channels (dict values list[int]) for each object in the source channel (dict keys int). 
-      Format: {source_channel:[target_channels]}
-      e.g. {0: [1,2]} Would use the objects in channel zero to extract the intensity from channels 1 and 2.
+    Extract object intensities in target channels.
+      Format: {source_channel: [target_channels]} (dict[int, list[int]])
+      e.g. {0: [1,2]} would extract the intensity of objects (defined by the segmentation of channel 0) in channels 1 and 2.
 
 OBJECTS_IMAGE_SIZE_RANGE:
   default_value: [-1, -1]

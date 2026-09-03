@@ -10,73 +10,24 @@ from typing import Any, Dict, List
 
 from SynAPSeg.config import constants
 from SynAPSeg.IO.BasePipelineComponent import BasePipelineComponent
-from SynAPSeg.Quantification.dispatcher import ExampleDispatcher
-from SynAPSeg.utils import utils_colocalization as uc
-from SynAPSeg.Quantification.validation import DataRequirement, ConfigRequirement
-from SynAPSeg.Plugins.base import get_available_plugins, get_plugin_module, get_plugin_default_parameters
-from SynAPSeg.Quantification.factory import QuantificationPluginFactory
 
-__output_data_vars__ = ['whole_rpdf', 'roi_df', 'summary_df']
+# from SynAPSeg.Plugins.base import BasePluginFactory
 
-from SynAPSeg.Quantification.plugins import object_detection
-from SynAPSeg.Quantification.plugins import roi_handling
-from SynAPSeg.Quantification.plugins import colocalization
+# def get_QuantificationPluginFactory():
+#     PLUGINS_DIRS = [
+#         os.path.join(constants.SYNAPSEG_BASE_DIR, 'Quantification', 'plugins'), # system plugins
+#         os.path.join(constants.SYNAPSEG_BASE_DIR, 'Plugins') # user plugins
+#     ]
+#     PLUGINS_DEFAULT_PARAMETERS_PATH = os.path.join(PLUGINS_DIRS[0], "default_parameters.yaml") # global default params that specifc modules may override
+#     PLUGIN_BASE_CLASS = 'BasePipelineStage'
+#     REQUIRED_SIGNAL = {'__plugin_group__': 'quantification'}
+#     CORE_PLUGINS = ['roi_handling', 'object_detection', 'colocalization'] # display in this order
+#     PLUGIN_PATTERN = '.*\.py$' # if filename.endswith(".py")
 
-# def find_stage_objects(directory=None):
-#     """
-#     Look for quantification pipeline plugins (as before)
-#     """
-#     if directory is None:
-#         directory = os.path.join(constants.SYNAPSEG_BASE_DIR, 'Quantification', 'plugins')
-#     stage_to_object = {}
-
-#     # Ensure the directory is in sys.path so imports will work
-#     sys.path.append(directory)
-
-#     for filename in os.listdir(directory):
-#         if filename.endswith(".py") and not filename.startswith("__"):
-#             filepath = os.path.join(directory, filename)
-#             module_name = os.path.splitext(filename)[0]
-
-#             spec = importlib.util.spec_from_file_location(module_name, filepath)
-#             if spec and spec.loader:
-#                 module = importlib.util.module_from_spec(spec)
-#                 try:
-#                     spec.loader.exec_module(module)
-
-#                     # Check if __plugin__ exists and is a string
-#                     stage_name = getattr(module, "__plugin__", None)
-#                     if isinstance(stage_name, str):
-#                         # Check if the object exists with the same name
-#                         obj = getattr(module, stage_name, None)
-#                         if obj is not None:
-#                             stage_to_object[stage_name] = obj
-#                 except Exception as e:
-#                     print(f"Failed to import {module_name}: {e}")
-
-#     return stage_to_object
-
-import os
-from typing import Any, Dict, List
-
-from SynAPSeg.config import constants
-from SynAPSeg.Plugins.base import BasePluginFactory
-
-def get_QuantificationPluginFactory():
-    PLUGINS_DIRS = [
-        os.path.join(constants.SYNAPSEG_BASE_DIR, 'Quantification', 'plugins'), # system plugins
-        os.path.join(constants.SYNAPSEG_BASE_DIR, 'Plugins') # user plugins
-    ]
-    PLUGINS_DEFAULT_PARAMETERS_PATH = os.path.join(PLUGINS_DIRS[0], "default_parameters.yaml") # global default params that specifc modules may override
-    PLUGIN_BASE_CLASS = 'BasePipelineStage'
-    REQUIRED_SIGNAL = {'__plugin_group__': 'quantification'}
-    CORE_PLUGINS = ['roi_handling', 'object_detection', 'colocalization'] # display in this order
-    PLUGIN_PATTERN = '.*\.py$' # if filename.endswith(".py")
-
-    QuantificationPluginFactory = BasePluginFactory(
-        PLUGINS_DIRS, CORE_PLUGINS, PLUGINS_DEFAULT_PARAMETERS_PATH, PLUGIN_PATTERN, REQUIRED_SIGNAL
-    )
-    return QuantificationPluginFactory
+#     QuantificationPluginFactory = BasePluginFactory(
+#         PLUGINS_DIRS, CORE_PLUGINS, PLUGINS_DEFAULT_PARAMETERS_PATH, PLUGIN_PATTERN, REQUIRED_SIGNAL
+#     )
+#     return QuantificationPluginFactory
 
 
 class Pipeline(BasePipelineComponent):
@@ -91,7 +42,10 @@ class Pipeline(BasePipelineComponent):
         Initializes the pipeline with an ordered list of stages.
         """
         self.attach_logger(logger)
-        factory = get_QuantificationPluginFactory()
+        
+        factory = self.get_plugin_factory()
+        # factory = get_QuantificationPluginFactory()
+        
         self.discovered_plugins = list(factory.PLUGINS.keys())
 
         stages = config.PIPELINE_STAGE_NAMES
@@ -112,6 +66,9 @@ class Pipeline(BasePipelineComponent):
         self.validate_pipeline_config(config)
         self.validate_pipeline_dependencies()
         
+    def get_plugin_factory(self): # -> 'BasePluginFactory':
+        from SynAPSeg.Quantification.factory import QuantificationPluginFactory
+        return QuantificationPluginFactory
     
     def _resolve_compile_blocks(self):
         """

@@ -20,14 +20,14 @@ import traceback
 import yaml
 import numpy as np
 import traceback
-from typing import Any, Tuple, Dict, Optional, Callable
+from typing import Any, Tuple, Dict, Optional, Callable, Iterator, overload
 
 from SynAPSeg.utils import utils_general as ug
 from SynAPSeg.utils import utils_image_processing as uip
 from SynAPSeg.config.constants import STANDARD_FORMAT, DISPLAY_FORMAT, PX_UNITS_CONVERSION_TO_UM, CHANNEL_MAX
 from SynAPSeg.IO.metadata_handler import MetadataParser, GroupExtractor, GroupParser
 from SynAPSeg.IO.BaseConfig import BaseConfig
-from SynAPSeg.common.Logging import setup_default_logger, rich_str
+from SynAPSeg.common.Logging import setup_default_logger, rich_str, Logger
 from SynAPSeg.IO.BaseDispatcher import DispatcherBase
 from SynAPSeg.IO.project import Project, Example
 
@@ -35,10 +35,13 @@ from SynAPSeg.IO.project import Project, Example
 # TODO ensure consistency by keeping config attributes inside config, not assigning them to the disp object
 
 class ExampleDispatcher(DispatcherBase):
-    """ Represents a single example in the analysis project.
+    """ 
+    Stores metadata and manages processing of a single example through a quantification pipeline.
+        Each ExampleDispatcher is responsible for loading its own data (using an external DataLoader), 
+        running through the pipeline, and marking itself complete. 
+    
     Attributes:
-        image_path (str): Path to the example directory.
-        config (dict): Configuration parameters (from ConfigManager).
+        config (BaseConfig): Configuration parameters
         index (int): Unique index for this example.
         scene_id (optional): For multi-scene images (e.g., czi files).
         metadata (dict): Loaded metadata for the example.
@@ -50,9 +53,10 @@ class ExampleDispatcher(DispatcherBase):
         start_time (float): Timestamp when processing started.
         end_time (float): Timestamp when processing finished.
     """
-    def __init__(self, config, disp_i=None, logger=None, parse_config=True):
+    def __init__(self, config:BaseConfig, disp_i:int, parent:'DispatcherCollection', logger:Optional[Logger], parse_config:bool=True):
         self.config = config
         self.disp_i = disp_i
+        self.parent = parent # ref to parent dispatcher collection
         self.ex_i = self.config.ex_i
         self.attach_logger(logger)
 
@@ -246,7 +250,7 @@ class ExampleDispatcher(DispatcherBase):
         
         """
         self.start_time = ug.dt()
-        self.logger.info(f"\n\nStarting dispatcher (i={self.disp_i}) | {self.ex_i} - Loading data...")
+        self.logger.info(f"\n\nStarting dispatcher (i={self.disp_i}, ex_i={self.ex_i}) - Loading data...")
 
         try:
             image_dict = self.build_image_dict(data_loaders)
@@ -254,7 +258,7 @@ class ExampleDispatcher(DispatcherBase):
         except Exception as e:
             self.raise_error(e, errortype="loading") #, outdir_path=outputHandler.outdir_path)
 
-        self.status = "loaded"
+        self.set_status("loaded")
         self.logger.info(f"Example loaded successfully (elapsed time: {ug.dt()-self.start_time}).\n")
         return image_dict
 
@@ -270,7 +274,7 @@ class ExampleDispatcher(DispatcherBase):
         Returns:
             A dictionary containing the updated state after processing.
         """
-        self.logger.info(f"Processing dispatcher (i={self.disp_i}) | {self.ex_i} through pipeline stages...")
+        self.logger.info(f"Processing dispatcher (i={self.disp_i}, ex_i={self.ex_i}) through pipeline stages...")
 
         try: # Run through the pipeline stages.
 
@@ -279,19 +283,19 @@ class ExampleDispatcher(DispatcherBase):
             if data.get('EXIT_FLAG'):
                 raise RuntimeError('EXIT_FLAG. See log for details.')
 
-            self.status = "processed"
-
-            # append this examples data to running aggregate
+            # append this examples data to running aggregate and pass any info needed for logging
             outputHandler.place_outputs(data, self.config) 
-            self.status = "complete."
+            
+            self.set_status("complete")
 
         except Exception as e:
             self.raise_error(e, outdir_path=outputHandler.outdir_path)
-
-        # log_str = rich_str(
-        #     f"Processed dispatcher (i={self.disp_i}) | {self.ex_i} in {round(self.get_processing_time(), 3)} seconds.", 
-        #     title='COMPLETED')
-        log_str = str(f"Processed dispatcher (i={self.disp_i}) | {self.ex_i} in {round(self.get_processing_time(), 3)} seconds.\n\n")
+        
+        # calculate remaining dispatchers from parent collection
+        current_completion_percent = self.parent.get_completion_percent()
+        log_str = str(
+            f"Processed dispatcher (i={self.disp_i}, ex_i={self.ex_i}) in {round(self.get_processing_time(), 3)} seconds.\nDispatcherCollection is now {current_completion_percent}% complete.\n\n"
+        )
         self.logger.info(log_str)
         
         gc.collect()
@@ -618,7 +622,7 @@ class ExampleDispatcher(DispatcherBase):
 
     def __str__(self):
         div = "="*60
-        desc = f"ExampleDispatcher(index={self.ex_i}, status={self.status})\n{div}\n{self.description}\n" 
+        desc = f"ExampleDispatcher(ex_i={self.ex_i}, status={self.status})\n{div}\n{self.description}\n" 
         return desc
 
     def __repr__(self):
@@ -653,7 +657,7 @@ class ExampleDispatcher(DispatcherBase):
 
     def raise_error(self, exc, **kwargs):
         """ re-raise a caught exception appending dispatcher info and the og traceback"""
-        self.status = "error"
+        self.set_status("error")
 
         tb = traceback.format_exc()
         emsg = f"{exc}\n\ntraceback:\n{tb}"
@@ -671,6 +675,11 @@ class ExampleDispatcher(DispatcherBase):
         # Re-raise the *original* exception with full traceback and added rerun msg
         new_exc = exc.__class__(f"{exc}\n\n{rerun_msg}")
         raise new_exc.with_traceback(exc.__traceback__)
+    
+    def set_status(self, status:str):
+        """ emit signal of status change - parent listens for certain updates """
+        self.status = status
+        self.parent.dispatcher_status_update(self)
 
 
 class DispatcherCollection(DispatcherBase):
@@ -682,12 +691,32 @@ class DispatcherCollection(DispatcherBase):
         self.config = config
         self.project = project
         self.dispatchers = []
+        self.n_dispatchers = -1
+        self.n_dispatchers_completed = -1 # access/update thru dispatcher signal emitting on 
+        self.n_dispatchers_remaining = -1
         
         self.examples_to_process = self._parse_config()
         self._create_dispatchers(self.examples_to_process)
-        self._init_pipeline()
+        
+    def start_disp_counts(self, n_dispatchers):
+        self.n_dispatchers = self.n_dispatchers_remaining = n_dispatchers
+        self.n_dispatchers_completed = 0
     
-    def _parse_config(self):
+    def dispatcher_status_update(self, dispatcher):
+        """ listen/respond to dispatcher status updates """
+        
+        if dispatcher.status == 'complete':
+            # update completion tracking
+            self.n_dispatchers_completed += 1
+            self.n_dispatchers_remaining -= 1
+        elif dispatcher.status == 'error':
+            self.n_dispatchers_remaining -= 1
+    
+    def get_completion_percent(self):
+        return round((self.n_dispatchers - self.n_dispatchers_remaining)/ self.n_dispatchers * 100, 2)
+        
+    
+    def _parse_config(self) -> list[str]:
         """ 
         check project example status and determine which examples/files to include in run
             looks through examples and pull out ones of interest. ['complete', or a list of example directory names (e.g. ['0000', ...])] 
@@ -711,7 +740,7 @@ class DispatcherCollection(DispatcherBase):
     
         return example_filepath_list
     
-    def _build_FILE_MAP(self, config):
+    def _build_FILE_MAP(self, config) -> dict[str, list[str]]:
         """ build FILE_MAP from config """
 
         FILE_MAP  = {
@@ -738,8 +767,17 @@ class DispatcherCollection(DispatcherBase):
         return FILE_MAP
         
     
-    def _filter_examples_status(self):
-        """ parse user input to get examples that should be processed. GET_EXS must be one of ['complete', 'all', or a list of examples list(int or str)]"""
+    def _filter_examples_status(self) -> list[str]:
+        """ 
+        Parse user input to get examples that should be processed. 
+        arguments to this method are suplied through self.config
+        
+        Args:
+            GET_EXS: Must be one of ['complete', 'all', or a list of examples list(int or str)]
+        
+        Returns:
+            A list of example file paths to process.
+        """
 
         emsg = f"No examples to process were found for Project `{self.project.name}`"
         
@@ -767,6 +805,7 @@ class DispatcherCollection(DispatcherBase):
         
         if GET_EXS == 'complete':
             example_filepath_list = [Path(p).name for p in where_map['complete']]
+            
             if len(example_filepath_list) == 0:
                 raise ValueError(
                     f"{emsg}\nNo examples are marked complete"
@@ -793,8 +832,9 @@ class DispatcherCollection(DispatcherBase):
         # check found
         if len(example_filepath_list) == 0:
             
-            emsg = f"GET_EXS={GET_EXS}\nFILE_MAP={self.config.params['FILE_MAP']}\nexclude_exi_strs={exclude_exi_strs}\n\n{self.config}"
-            print(f"No examples to process were found for Project `{self.project.name}` using parameters:\n{_params_str}")
+            emsg = f"GET_EXS={GET_EXS}\nFILE_MAP={self.config.params['FILE_MAP']}\n{self.config}"
+            raise ValueError(f"No examples to process were found for Project `{self.project.name}` using parameters:\n{emsg}")
+
         return example_filepath_list
     
 
@@ -809,41 +849,52 @@ class DispatcherCollection(DispatcherBase):
             cc['ex_i'] = ex_i
 
             try:
-                disp = ExampleDispatcher(cc, disp_i, logger=self._shared_logger)
+                disp = ExampleDispatcher(
+                    config = cc, 
+                    disp_i = disp_i, 
+                    parent = self,
+                    logger = self._shared_logger,
+                    parse_config = True,
+                )
                 self.dispatchers.append(disp)
             except Exception as e:
                 tb = traceback.format_exc()
                 errors_init_disps.append(f"Dispatcher (i={disp_i}, ex_i={ex_i}) raised error:\n{tb}")
+        
+        self.n_dispatchers = len(self.dispatchers)
 
         if len(errors_init_disps) > 0:
             raise ValueError("\n".join(errors_init_disps))
         
         self.logger.info('dispatchers initialized successfully')  
     
-    def _init_pipeline(self):
-        if not 'PIPELINE_STAGE_NAMES' in self.config:
-            return None
-
-        pass # TODO
-          
-    def __iter__(self):
+    def __iter__(self) -> Iterator[ExampleDispatcher]:
         return iter(self.dispatchers)
 
-    def __getitem__(self, index):
-        return self.dispatchers[index]
 
-    def __len__(self):
+    @overload # using overloads to appease the type checker 
+    def __getitem__(self, index: int) -> ExampleDispatcher:
+        ...
+
+    @overload
+    def __getitem__(self, index: slice) -> list[ExampleDispatcher]:
+        ...
+
+    def __getitem__(self, index: int | slice) -> ExampleDispatcher | list[ExampleDispatcher]:
+        return self.dispatchers[index]
+    
+    def __len__(self) -> int:
         return len(self.dispatchers)
 
-    def filter(self, condition):
+    def filter(self, condition: Callable[[ExampleDispatcher], bool]) -> list[ExampleDispatcher]:
         """
         Returns a list of dispatchers that meet the given condition.
         
         Args:
-        condition: A callable that takes an ExampleDispatcher and returns True/False.
+            condition: A callable that takes an ExampleDispatcher and returns True/False.
         
         Returns:
-        List of ExampleDispatcher objects.
+            A list of ExampleDispatcher objects that meet the given condition.
         """
         return [d for d in self.dispatchers if condition(d)]
 

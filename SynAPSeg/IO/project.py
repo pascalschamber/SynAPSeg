@@ -143,13 +143,15 @@ class Example:
         self.is_skipped = self.check_marked_skip(self.path_to_example)
     
     @staticmethod
-    def is_ex_dir(path_to_example):
+    def is_ex_dir(path_to_example) -> bool:
         """check if path is an example directory by looking if it contains metadata.yml file"""
         if not os.path.isdir(path_to_example):
             return False    
-        if not "metadata.yml" in os.listdir(path_to_example):
-            return False
-        return True
+        
+        # check for metadata.yml or metadata.yaml in example's directory
+        has_md = not set(("metadata.yaml", "metadata.yml")).isdisjoint(os.listdir(path_to_example))
+        
+        return has_md
     
     @staticmethod
     def check_marked_complete(path_to_example):
@@ -308,11 +310,17 @@ class Example:
         ann_fns = [c for c in ex_contents if any([c.startswith(pre) for pre in ann_fn_prefixes])]
         return ann_fns
     
-    def load_image_data(self, fn, collapse=True, silent=False):
-        """ load tiff array and format from ex's directory """
+    def load_image_data(self, fn, collapse=True, silent=False) -> tuple[np.ndarray, str]:
+        """ 
+        load tiff array and format from ex's directory 
+        
+        returns:
+            array
+            dimension format string 
+        """
         from SynAPSeg.utils.utils_image_processing import read_img, pai
         p = self.get_path(fn)
-        fmt = self.get_current_format(fn)
+        fmt = self.get_current_format(fn, verbose = not silent)
         a, fmt = read_img(p, fmt=fmt, collapse=collapse)
         if not silent: print(f'{fn} <{fmt}> {pai(a,1)}')
         return a, fmt
@@ -333,15 +341,22 @@ class Example:
         if existing_key is not None:
             return self.exmd['data_metadata']['data_formats'][existing_key]
         else:
-            from SynAPSeg.utils.utils_image_processing import estimate_format, get_tiff_shape
+            from SynAPSeg.utils.utils_image_processing import estimate_format, get_tiff_shape, get_png_shape
 
             # tiff path -> shape | ignore data shape in exmd since it could be out of data. 
             # We should treat as just a convience for viewing all shapes easily, but always do the look up. #TODO likely some code needs to be refactored re this.
             # assume reading from disk is always correct, since we only handle tiffs/imgs here this is okay 
             # but to support other data types where shape might be less reliably inferred from disk, should take from metadata
             if verbose: print(f"warning - format for {key} not found in metadata.")
-            shape = get_tiff_shape(file_path=self.get_path(key)) 
-            # self.exmd['data_metadata']['data_shapes'].get(key)
+            
+            if key.lower().endswith(('tiff', 'tif')):
+                shape = get_tiff_shape(file_path=self.get_path(key)) 
+            elif key.lower().endswith('.png'):
+                shape = get_png_shape(file_path=self.get_path(key)) 
+            else:
+                shape = self.exmd['data_metadata']['data_shapes'].get(key)
+                if shape is None:
+                    raise ValueError(f"Shape for {key} not found in metadata and cannot be inferred from filetype.")
 
             if verbose: print(f"\tattempting to infer format from shape: {shape}")
             est_fmt = estimate_format(
@@ -795,7 +810,7 @@ class Project:
         """
         
         for ex in self.examples:
-            if (not ex.is_complete) and (not ex.is_skipped):
+            if (not ex.check_marked_complete(ex.path_to_example)) and (not ex.check_marked_skip(ex.path_to_example)):
                 return ex.name
 
         print('no examples to process were found.')

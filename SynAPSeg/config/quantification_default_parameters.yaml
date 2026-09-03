@@ -116,6 +116,15 @@ WRITE_OUTPUT:
   widget_type: bool
   tooltip: If false, files are not saved.
   heading: General Project Settings
+OUTPUT_DIR:
+  default_value: null
+  widget_type: path
+  tooltip: | 
+    Path to output directory. If null, one will automatically be created in the project's outputs directory. 
+    If provided it must be an already existing directory, e.g. from an interupted run.
+  heading: General Project Settings
+  extra:
+    path_type: directory
 OUTPUT_DIR_BASE:
   default_value: ${EXAMPLES_BASE_DIR}\${EXAMPLE_PROJ}
   widget_type: path

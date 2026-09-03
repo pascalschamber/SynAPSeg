@@ -43,7 +43,7 @@ from SynAPSeg.utils import utils_general as ug
 from SynAPSeg.utils import utils_image_processing as uip
 from SynAPSeg.utils import utils_plotting as up
 from SynAPSeg.Quantification.pipeline import Pipeline
-from SynAPSeg.Quantification.dispatcher import DispatcherCollection
+from SynAPSeg.Quantification.dispatcher import DispatcherCollection, ExampleDispatcher
 from SynAPSeg.Quantification.output_handler import OutputHandler
 from SynAPSeg.IO.metadata_handler import MetadataParser
 from SynAPSeg.utils.utils_ImgDB import ImgDB
@@ -83,6 +83,7 @@ def main(config_key, config_path=None, default_parameters_path=None, dispatchers
     QUANT_CONFIG.params['OUTPUT_DIR_BASE'] = os.path.join(QUANT_CONFIG.EXAMPLES_BASE_DIR, QUANT_CONFIG.EXAMPLE_PROJ)
     QUANT_CONFIG.params['EXAMPLES_DIR'] = os.path.join(QUANT_CONFIG.OUTPUT_DIR_BASE, QUANT_CONFIG.EXAMPLE_DIRNAME)
     QUANT_CONFIG.params['PIPELINE_STAGE_NAMES'] = list(QUANT_CONFIG.STAGE_PARAMS.keys()) 
+    QUANT_CONFIG.resolvers = [] # pickling error
 
     proj = Project(QUANT_CONFIG.OUTPUT_DIR_BASE)
     proj.setup_logger("Quantification") # setup logging -
@@ -101,14 +102,13 @@ def main(config_key, config_path=None, default_parameters_path=None, dispatchers
     ####################################################################################
     # Initialize Dispatchers + pipeline
     dispatchers = DispatcherCollection(QUANT_CONFIG, proj, proj.logger) 
-    print(f"n dispatchers: {len(dispatchers)}")
     
     # init pipeline
     pipeline = Pipeline(QUANT_CONFIG, proj.logger)
 
     # init output handler 
     outputHandler = OutputHandler(pipeline.stages, QUANT_CONFIG, proj.logger,
-        outdir_path=outdir_path
+        outdir_path=outdir_path or QUANT_CONFIG.params.get('OUTPUT_DIR')
     )
     
     ####################################################################################
@@ -116,9 +116,12 @@ def main(config_key, config_path=None, default_parameters_path=None, dispatchers
     ####################################################################################
     dispatchers_slice = dispatchers_slice or QUANT_CONFIG.params.get('DISPATCHER_SLICE') or slice(None)
     dispatchers_slice = dispatchers_slice if isinstance(dispatchers_slice, slice) else slice(*dispatchers_slice)
-    dispatchers.logger.info(f"n dispatchers: {len(dispatchers) if dispatchers_slice==slice(None) else dispatchers_slice}")
     
-    for disp in dispatchers[dispatchers_slice or slice(None, None)]:
+    dispatchers_to_process = dispatchers[dispatchers_slice]
+    dispatchers.start_disp_counts(len(dispatchers_to_process))
+    dispatchers.logger.info(f"n dispatchers: {dispatchers.n_dispatchers}")
+                      
+    for disp in dispatchers_to_process:
         data = disp.load(data_loaders=None) # Load example's data
         data = disp.process_example(pipeline, data, outputHandler) # Run pipeline, passing data to outputHandler
     
@@ -127,7 +130,7 @@ def main(config_key, config_path=None, default_parameters_path=None, dispatchers
     ####################################################################################
     outputHandler.concat_outputs(QUANT_CONFIG)
     outputHandler.log_quant_config(proj, dispatchers, QUANT_CONFIG)
-    outputHandler.log_colocal_ids(data)
+    outputHandler.log_colocal_ids()
     outputHandler.print_main_container_head()
     # outputHandler.delete_tempfolder()             # run to delete tempdir and it's contents -- only delete if all dispatchers have been run else concat outputs will fail
     rich_box(f':)', title='ALL DONE') 

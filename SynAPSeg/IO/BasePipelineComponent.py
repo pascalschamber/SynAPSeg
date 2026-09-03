@@ -13,7 +13,6 @@ class BasePipelineComponent(ABC):
         e.g. quantification pipeline, stages, etc.
 
     """
-
     def attach_logger(self, logger: Optional[logging.Logger]=None):
         """ Logger setup using a shared logger or creates one if logger=None"""
         self._shared_logger = logger

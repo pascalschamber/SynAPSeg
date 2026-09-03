@@ -11,7 +11,7 @@ import threading
 import queue
 import time
 from collections.abc import Iterable
-
+from copy import deepcopy
 from SynAPSeg.utils import utils_general as ug
 from SynAPSeg.IO.metadata_handler import MetadataParser
 from SynAPSeg.utils.utils_ImgDB import ImgDB
@@ -42,8 +42,13 @@ class OutputHandler:
         self.QUANT_CONFIG = QUANT_CONFIG # attach quant config for reference
         self.cache_intermediate_results = self.QUANT_CONFIG['CACHE_INTERMEDIATE_RESULTS']
         
+        # logged info
+        self.logged_data_keys = ['colocalization_info']
+        self.colocalization_info = {}
+        
         # setup file structure for writing outputs
         self.set_outdir_path(outdir_path)
+        
         
     def init_containers(self, stages):
         """
@@ -79,8 +84,16 @@ class OutputHandler:
             else:
                 self.main_container[cont_name].append(result)
         self.logger.info(f'place_outputs completed.')
+        
+        # fetch any info that should be logged
+        self.parse_logged_data(data, config)
     
-
+    def parse_logged_data(self, data, config):
+        
+        for k in self.logged_data_keys:
+            if k in data.keys():
+                setattr(self, k, deepcopy(data[k]))
+                
     def handle_writing_results_exceptions(self, key, df, config):
         
         # drop coords from output to reduce filesize bloat - unless otherwise specified
@@ -130,7 +143,9 @@ class OutputHandler:
     def load_cached_results(self):
         """ 
         if self.cache_intermediate_results,
-            read paths from main_container and update with lists of dataframes
+            for each container in main_container, retrieves all filepaths in its temp directory
+                this allows files that were previously written to be read, e.g. from an interupted run
+            reads each path from each container and updates with lists of dataframes
             iters over each ex's data path in sub container 
             try to load cached data
                 handles case where pipeline stage is attached but req. data keys are missing. 
@@ -231,12 +246,13 @@ class OutputHandler:
         except Exception as e:
             print(f'unable to log config\nerror: {e}')
 
-    def log_colocal_ids(self, data):
+    def log_colocal_ids(self):
+        if not self.colocalization_info:
+            return
+        
         try:
-            image_channels, clc_nuc_info = MetadataParser.get_imgdb_colocal_nuclei_info(data['metadata'])
-            imgdb = ImgDB(image_channels=image_channels, colocal_nuclei_info=clc_nuc_info)
             clc_id_outpath = os.path.join(self.outdir_path, 'colocal_ids.yaml')        
-            write_config(imgdb.__dict__, clc_id_outpath)
+            write_config(self.colocalization_info, clc_id_outpath)
         except Exception as e:
             self.logger.error(f"failed to log_colocal_ids, error:\n{e}")
 
@@ -267,6 +283,10 @@ class OutputHandler:
                     'outputs', 
                     f"{ug.get_datetime()}_Quantification_{self.QUANT_CONFIG.EXAMPLE_PROJ}")
                 , makedirs=True)
+        else:
+            # verify directory already exists
+            if not os.path.isdir(outdir_path):
+                raise ValueError(f'output directory does not exist: {outdir_path}')
             
         self.outdir_path = outdir_path
         self.QUANT_CONFIG.params['output_dir'] = outdir_path # update config with this info

@@ -213,8 +213,18 @@ input_image_format:
 channel_info:
   widget_type: "dict_int_str"
   default_value: null
-  tooltip:  "Information about the channels in the images. e.g. {405: 'channel0', ...}"
+  tooltip:  |
+    Information about the channels in the images. 
+    Keys (Channel) should be excitation wavelength (nm) or channel index (e.g. 0, 1, 2, etc.)
+      for czi files using excitation wavelength is recommended as it will be used to 
+      automatically order the channels and extract metadata
+    Values (Name) should be the name of the channel (e.g. 'dapi', 'tdTomato', 'channel2', etc.)
+    example:
+      {405: 'dapi', ...}"
   heading: Data
+  extra:
+    key_label_text: "Channel:"
+    value_label_text: "Name:"
 take_dims:
   default_value: ''
   widget_type: str

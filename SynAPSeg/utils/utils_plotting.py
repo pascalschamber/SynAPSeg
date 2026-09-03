@@ -1,26 +1,10 @@
+from typing import Optional, Tuple, Iterator, Dict, List, Any
 import numpy as np
-import matplotlib.pyplot as plt
 import math
-from typing import Tuple
-import matplotlib
-from matplotlib.colors import LinearSegmentedColormap
 import os
-import numpy as np
-from skimage.measure import label, regionprops
 import matplotlib.pyplot as plt
-import imageio
-from typing import Optional, List, Dict, Any
-from PIL import Image
-import napari
-from scipy.ndimage import binary_dilation
-import skimage
-from scipy.stats import pearsonr
-import io
-from IPython.display import Image as IPyImage, display
 
-from SynAPSeg.utils import utils_image_processing as uip
 from SynAPSeg.utils import utils_general as ug
-from SynAPSeg.config.constants import STANDARD_FORMAT, DISPLAY_FORMAT
 
 cv2 = ug.try_import('cv2')
 
@@ -45,6 +29,8 @@ def get_colors(cmap='hsv', n=None, l=None):
 def save_images_as_gif(X, X2=None, filename='output.gif', duration=0.1, auto_format_output=True):
     # Assuming X is your 4D numpy array of images with shape (num_images, height, width, channels)
     # Example: X.shape -> (100, 64, 64, 3)
+    import imageio
+    
     if X.ndim == 3: # e.g. time series with 1 channel
         X = np.repeat(X[:, :, :, np.newaxis], 3, axis=3)
     if X2 is not None:
@@ -69,6 +55,9 @@ def create_composite_image_with_colormaps(image, colormaps):
     Returns:
     numpy.ndarray: Composite image of shape (Y, X, 3).
     """
+    from SynAPSeg.utils.utils_image_processing import normalize_01
+    from matplotlib.colors import LinearSegmentedColormap
+    
     assert image.ndim == 3
     
     # Initialize the composite image
@@ -89,7 +78,7 @@ def create_composite_image_with_colormaps(image, colormaps):
         
         # Ensure pixel values are in range [0, 1]
         if image[:,:,i].max() > 1:
-            image_normalized = uip.normalize_01(image[:,:,i])
+            image_normalized = normalize_01(image[:,:,i])
         else:
             image_normalized = image[:,:,i]
         
@@ -107,10 +96,9 @@ def create_composite_image_with_colormaps(image, colormaps):
 
 def get_label_colormap(alpha=None):
     ''' colormap for a label image from pyclesperanto's implementation but with ability to get px labels'''
-    from numpy.random import MT19937
-    from numpy.random import RandomState, SeedSequence
-    import matplotlib
-    
+    from numpy.random import MT19937, RandomState, SeedSequence
+    from matplotlib.colors import ListedColormap
+        
     rs = RandomState(MT19937(SeedSequence(3)))
     lut = rs.rand(65537, 3)
     lut[0, :] = 0
@@ -125,7 +113,7 @@ def get_label_colormap(alpha=None):
         lut = np.hstack([lut, np.ones([len(lut),1])*alpha])
         lut[0] = [np.nan, np.nan, np.nan, 0]
 
-    cmap = matplotlib.colors.ListedColormap(lut)
+    cmap = ListedColormap(lut)
     return cmap
 
 
@@ -237,9 +225,11 @@ def overlay_colored_outlines(lbl_img, int_img, lbl_alpha=1.0, convert_to_float=F
     int_img should be in range(0,1)
     
     """
+    from skimage.morphology import dilation
+    from SynAPSeg.utils.utils_image_processing import mask_to_outlines
     
-    bin_mask = uip.mask_to_outlines(lbl_img)
-    colored_outlines = np.where(bin_mask>0, skimage.morphology.dilation(lbl_img), 0)
+    bin_mask = mask_to_outlines(lbl_img)
+    colored_outlines = np.where(bin_mask>0, dilation(lbl_img), 0)
     ulabels = np.unique(colored_outlines)
     n_colors = len(ulabels)
     colors = [get_label_colormap()(i / (n_colors - 1)) for i in range(n_colors)] if n_colors>1 else [get_label_colormap()(0.5)]
@@ -317,6 +307,7 @@ def mask_to_outline_contours(
 
     return ax
 
+overlay_label_contours = mask_to_outline_contours # alias 
 
 def get_label_image_contours(label_image, iterations=0) -> list[list[np.ndarray]]:
     """ 
@@ -325,6 +316,7 @@ def get_label_image_contours(label_image, iterations=0) -> list[list[np.ndarray]
         list[list[np.ndarray]]: list of list of contours for each label in the label image
         if multiple objects (non-connected components) have the same label there will be multiple contours in the list
     """
+    from scipy.ndimage import binary_dilation
     
     assert label_image.ndim == 2, f"only 2d label image input supported"
 
@@ -368,10 +360,10 @@ def plot_contours(contours_list, ax, alpha=1, linewidth=1, label_cmap=False, c_f
     return ax
 
 
-import math
-import numpy as np
-import matplotlib.pyplot as plt
-from typing import Optional, Tuple, Iterator, Dict, Any 
+
+
+
+
 
 def subplots(
     n_imgs: int, 
@@ -447,17 +439,12 @@ def to_display_format(arr, current_format=None):
     disp_arr = morph_to_target_format(arr, current_format, 'YXC').squeeze()
     if disp_arr.ndim < 2: raise ValueError(disp_arr.shape)
     return disp_arr
-    
-    
-    # arr = uip.transform_axes(arr, current_format, STANDARD_FORMAT)
-    # # format to display dims
-    # take_dims = "".join([d for d in STANDARD_FORMAT if d not in DISPLAY_FORMAT])
-    # return uip.reduce_dimensions(arr, current_format=STANDARD_FORMAT, take_dims=take_dims, project_dims="Z")
 
 def validate_format(arr, current_format=None):
     if current_format and len(current_format) == len(arr.shape):
         return current_format
     from SynAPSeg.utils.utils_image_processing import estimate_format
+    from SynAPSeg.config.constants import STANDARD_FORMAT
     return estimate_format(arr.shape, default_format=STANDARD_FORMAT)
 
 
@@ -571,6 +558,8 @@ def plot_image_grid(
 
 
 def show_channels(img, clip_max=None, rgb=['red', 'green', 'blue']):
+    from SynAPSeg.utils.utils_image_processing import convert_16bit_image
+    
     print(img.shape)
     assert img.ndim == 3
     # normalize, or apply label color map
@@ -578,7 +567,7 @@ def show_channels(img, clip_max=None, rgb=['red', 'green', 'blue']):
         cmaps = [get_label_colormap()]
     elif img.dtype == np.uint16: # images
         if clip_max is None: clip_max = img.max() # equates to min/max normalization
-        img = uip.convert_16bit_image(img, NORM=True, CLIP=(0,clip_max))
+        img = convert_16bit_image(img, NORM=True, CLIP=(0,clip_max))
 
     if img.dtype == np.uint8:
         cmaps = [generate_custom_colormap(c, img) for c in rgb]
@@ -589,6 +578,7 @@ def show_channels(img, clip_max=None, rgb=['red', 'green', 'blue']):
 
 def show_ch(img, cmaps=None, axis=-1):
     """new version simplfied, assumes channels are last"""
+    from matplotlib.colors import LinearSegmentedColormap
     n_ch = img.shape[axis]
     cmaps = dict(zip([c for c in range(n_ch)], ['red', 'green', 'blue', 'magenta'])) if cmaps is None else cmaps
     
@@ -612,6 +602,8 @@ def show_stack_new(img, ch, cmap='magma', figsize=(32,16), nmin=0.1, nmax=99.9):
 
 def generate_custom_colormap(color_name, image):
     # create a custom color map from black to specific color, where px at max value appear white
+    from matplotlib.colors import LinearSegmentedColormap
+    
     alpha=1
     color_dict = {'red':0, 'green': 1, 'blue': 2}
 
@@ -630,7 +622,7 @@ def generate_custom_colormap(color_name, image):
     color_list = [[0, 0, 0, 1]] + [[i/n if j==ch_color else 0 for j in range(3)]+[alpha] for i in range(1, n-1)] + [[255,255,255,1]]
 
     # # Create a color map from this list
-    cmap = matplotlib.colors.LinearSegmentedColormap.from_list('black_to_' + color_name, color_list)
+    cmap = LinearSegmentedColormap.from_list('black_to_' + color_name, color_list)
     
     return cmap
 
@@ -666,6 +658,7 @@ def show(
     **im_show_kwargs,
     ):
     """ display a 2D or 3D image using matplotlib's imshow """
+    from SynAPSeg.utils.utils_image_processing import mip, convert_16bit_image
 
     if isinstance(img, list):
         _show_handle_list_img_input(
@@ -685,11 +678,11 @@ def show(
         if img.shape[-1]==4:
             alpha = None
     else: # if ZYX or ZYXC
-        img = uip.mip(np.array(img), axis=0)
+        img = mip(np.array(img), axis=0)
 
     # handle custom colormaps
     if img.dtype.type == np.uint16:
-        img = uip.convert_16bit_image(img)
+        img = convert_16bit_image(img)
     elif img.dtype == np.int32:
         cmap = get_label_colormap()
         interpolation = 'nearest'
@@ -734,6 +727,10 @@ def show_gif(images, figsize=(12,12), duration=200, loop=0, cmap='gray', hide_ax
     None
         Displays the GIF inline in the notebook.
     """
+    from PIL import Image
+    from IPython.display import Image as IPyImage, display
+    import io
+    
     frames = []
     
     assert all(im.ndim==2 for im in images)
@@ -769,6 +766,10 @@ def show_gif(images, figsize=(12,12), duration=200, loop=0, cmap='gray', hide_ax
 
 def show_in_napari(imgs, lbl_img_contours=1):
     """show arrays in napari """
+    import napari
+    from SynAPSeg.IO.image_parser import ImageParser
+    from SynAPSeg.utils import utils_image_processing as uip
+    
     viewer = napari.Viewer()
     imgs = [imgs] if isinstance(imgs, np.ndarray) else imgs
     assert isinstance(imgs, list)
@@ -779,7 +780,7 @@ def show_in_napari(imgs, lbl_img_contours=1):
             if not os.path.exists(img): 
                 raise FileNotFoundError(f"{img}")
             
-            from SynAPSeg.IO.image_parser import ImageParser
+            
             filepath = img
             parser = ImageParser.create_parser(filepath)
             _, img = parser.load_image()
@@ -851,6 +852,8 @@ def show_filter_rpdf_results(rpdf, rpdf_filtered, label_img, int_img, clc_id_map
             up.show_filter_rpdf_results(rpdf, rpdf_filtered, label_img_preproc, int_img, {0:0}, ax=ax[0])
             plt.show()
     """
+    from SynAPSeg.utils import utils_image_processing as uip
+    
     # handle multiple axes
     MULTI_AX = True if isinstance(ax, np.ndarray) else False 
     
@@ -948,6 +951,8 @@ def seaborn_annotate_correlations(data, corr_cols, subset_var, subset_attrs, **k
         }
     )
     """
+    from scipy.stats import pearsonr
+    
     current_var = data[subset_var].unique()
     assert len(current_var) == 1
     current_attrs = subset_attrs[current_var[0]]
@@ -986,6 +991,7 @@ def svg_to_png(svg_path, png_path, size=(800, 800)):
     - png_path (str): Path to the output PNG file.
     - size (tuple): The (width, height) to resize the images to.
     """
+    from PIL import Image
     cairosvg = ug.try_import('cairosvg')
     
     # Convert SVG to PNG
@@ -1005,6 +1011,7 @@ def create_gif(image_paths, gif_path, duration=2000):
     - gif_path (str): Path to save the output GIF file.
     - duration (int): Duration of each frame in the GIF in microseconds.
     """
+    import imageio
     images = []
     for image_path in image_paths:
         images.append(imageio.imread(image_path))
@@ -1058,6 +1065,9 @@ def svgs_to_gif(
 
 def plot_areas(binary_image):
     """plot the areas of objects in a binary image"""
+    
+    from skimage.measure import label, regionprops
+    
     # Label the objects in the binary image
     labeled_image = label(binary_image)
 
@@ -1211,7 +1221,7 @@ def plot_effect_sizes(
     ):
     import pingouin as pg
     import seaborn as sns
-    import matplotlib.patches as mpatches
+    from matplotlib.patches import Patch
 
     orientation = 'vertical' if isinstance(x_vars, list) else 'horizontal'
     iter_vars = x_vars if orientation == 'vertical' else y_vars  
@@ -1254,7 +1264,7 @@ def plot_effect_sizes(
             ax.axhline(y=0, color='gray', linestyle='--')
         results[var] = data
     
-    patches = [mpatches.Patch(color=color, label=label) for label, color in hue_palette.items()]
+    patches = [Patch(color=color, label=label) for label, color in hue_palette.items()]
     ax.legend(handles=patches, title=legend_title or 'Legend', bbox_to_anchor=(1.05, 1.0))
     
     plt.tight_layout()
@@ -1329,7 +1339,6 @@ def make_legend(
         Additional kwargs passed to `ax.legend()`.
     """
     # move this to utils plotting 
-    import matplotlib.pyplot as plt
     from matplotlib.patches import Patch, Circle
     from matplotlib.lines import Line2D
 
@@ -1374,8 +1383,7 @@ def make_legend(
 
     return legend
 
-import matplotlib.pyplot as plt
-import matplotlib.patches as patches
+
 
 def add_scalebar(
     ax, 
@@ -1408,6 +1416,8 @@ def add_scalebar(
     - scalebar_kwargs: Additional kwargs passed to patches.Rectangle
     - text_kwargs: Additional kwargs passed to ax.text
     """
+    from matplotlib.patches import Rectangle
+    
     if title is None:
         title = f"{length_units} {unit_of_length}"
     # Calculate bar length in pixel coordinates
@@ -1433,7 +1443,7 @@ def add_scalebar(
     )
     _scalebar_kwargs.update(scalebar_kwargs or {})
     
-    scale_bar = patches.Rectangle(**_scalebar_kwargs)
+    scale_bar = Rectangle(**_scalebar_kwargs)
     ax.add_patch(scale_bar)
     
 
