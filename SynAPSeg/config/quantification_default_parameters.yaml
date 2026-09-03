@@ -2,6 +2,7 @@
 EXAMPLES_BASE_DIR:
   default_value: !ENV ${PROJECTS_ROOT_DIR}
   widget_type: path
+  display_name: Project Root Directory
   tooltip: path to base directory containing projects.
   heading: General Project Settings
   extra:
@@ -10,6 +11,7 @@ EXAMPLES_BASE_DIR:
 EXAMPLE_PROJ:
   default_value: null
   widget_type: str
+  display_name: Project Name
   tooltip: name of the project
   heading: General Project Settings
   flags: ["hidden"]
@@ -17,12 +19,14 @@ EXAMPLE_PROJ:
 EXAMPLE_DIRNAME:
   default_value: 'examples'
   widget_type: str
+  display_name: Examples Subfolder Name
   tooltip: name of directory within project folder to look for individual examples - only here if custom behavior is required
   heading: General Project Settings
   flags: ["hidden"]
 EXAMPLES_DIR:
   default_value: ${EXAMPLES_BASE_DIR}\${EXAMPLE_PROJ}\${EXAMPLE_DIRNAME}
   widget_type: str
+  display_name: Path To Examples Folder
   tooltip: path to look for individual examples - only here if custom behavior is required
   heading: General Project Settings
   flags: ["hidden"]

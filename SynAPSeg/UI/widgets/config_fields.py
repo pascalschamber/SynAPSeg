@@ -136,13 +136,10 @@ class BaseConfigField(QWidget):
         """ Safely removes the widget from the UI """
         self.setParent(None)
         self.deleteLater()
-    
-    
-        
 
 
 class IntConfigField(BaseConfigField):
-    def __init__(self, default_value=0, widget_type='', tooltip='', heading='General', category='', value_range=None, flags=None):
+    def __init__(self, default_value=0, widget_type='', tooltip='', heading='General', category='', value_range=None, flags=None, **kwargs):
         super().__init__(default_value=default_value, widget_type=widget_type, tooltip=tooltip, heading=heading, category=category, flags=flags)
         self.set_widget(QSpinBox())
         value_range = value_range if value_range is not None else [-999999, 999999]
@@ -161,7 +158,7 @@ class IntConfigField(BaseConfigField):
 
 
 class FloatConfigField(BaseConfigField):
-    def __init__(self, default_value=0.0, widget_type='', tooltip='', heading='General', category='', value_range=None, flags=None):
+    def __init__(self, default_value=0.0, widget_type='', tooltip='', heading='General', category='', value_range=None, flags=None, **kwargs):
         # default value cannot be None
         super().__init__(default_value=default_value, widget_type=widget_type, tooltip=tooltip, heading=heading, category=category, flags=flags)
         self.widget: QDoubleSpinBox
@@ -186,7 +183,7 @@ class FloatConfigField(BaseConfigField):
 
 
 class BoolConfigField(BaseConfigField):
-    def __init__(self, default_value=False, widget_type='', tooltip='', heading='General', category='', flags=None):
+    def __init__(self, default_value=False, widget_type='', tooltip='', heading='General', category='', flags=None, **kwargs):
         super().__init__(default_value=default_value, widget_type=widget_type, tooltip=tooltip, heading=heading, category=category, flags=flags)
         self.set_widget(QCheckBox())
         self.widget.setChecked(default_value)
@@ -200,7 +197,7 @@ class BoolConfigField(BaseConfigField):
 
 
 class StringConfigField(BaseConfigField):
-    def __init__(self, default_value="", widget_type='', tooltip='', heading='General', category='', flags=None):
+    def __init__(self, default_value="", widget_type='', tooltip='', heading='General', category='', flags=None, **kwargs):
         super().__init__(default_value=default_value, widget_type=widget_type, tooltip=tooltip, heading=heading, category=category, flags=flags)
         self.set_widget(QLineEdit())
         self.widget.setText(str(default_value))
@@ -218,7 +215,7 @@ class StringConfigField(BaseConfigField):
 
 class DirectoryConfigField(BaseConfigField):
     """Custom widget for selecting directories."""
-    def __init__(self, default_value="", widget_type='', tooltip='', heading='General', category='', flags=None):
+    def __init__(self, default_value="", widget_type='', tooltip='', heading='General', category='', flags=None, **kwargs):
         super().__init__(default_value=default_value, widget_type=widget_type, tooltip=tooltip, heading=heading, category=category, flags=flags)
         self.layout = QHBoxLayout()
         self.set_widget(QLineEdit())
@@ -254,13 +251,14 @@ class PathConfigField(BaseConfigField):
         heading="General",
         category="",
         path_type=None,
-        flags=None
+        flags=None,
+        **kwargs,
     ):
         super().__init__(default_value=default_value, widget_type=widget_type, tooltip=tooltip, heading=heading, category=category, flags=flags)
 
         # force path type
         path_types = [path_type.lower()] if path_type else ["file", "directory"]
-        
+
         # Save final composite widget to self.widget (for your system to use)
         widget = QWidget()  # <- this will contain everything
 
@@ -286,10 +284,9 @@ class PathConfigField(BaseConfigField):
         main_layout.addLayout(path_layout)
         main_layout.setContentsMargins(0, 0, 0, 0)
         widget.setLayout(main_layout)
-        
+
         self.set_widget(widget)
         # self.connect_change_signal() emit directly in set value
-
 
     def open_file_dialog(self):
         """Open file or directory dialog based on current selection."""
@@ -310,10 +307,9 @@ class PathConfigField(BaseConfigField):
         self.path_label.setText(value)
         self.value_changed.emit()
 
-    
-    
+
 class DictConfigField(BaseConfigField):
-    def __init__(self, default_value="", widget_type='', tooltip='', heading='General', category='', flags=None):
+    def __init__(self, default_value="", widget_type='', tooltip='', heading='General', category='', flags=None, **kwargs):
         super().__init__(default_value=default_value, widget_type=widget_type, tooltip=tooltip, heading=heading, category=category, flags=flags)
         self.set_widget(QTextEdit())
         self.set_value(default_value)
@@ -326,7 +322,7 @@ class DictConfigField(BaseConfigField):
         self.widget.setPlainText(yaml.dump(value))
 
 class ListConfigField(BaseConfigField):
-    def __init__(self, default_value="", widget_type='', tooltip='', heading='General', category='', flags=None):
+    def __init__(self, default_value="", widget_type='', tooltip='', heading='General', category='', flags=None, **kwargs):
         super().__init__(default_value=default_value, widget_type=widget_type, tooltip=tooltip, heading=heading, category=category, flags=flags)
         self.set_widget(QComboBox())
         if isinstance(default_value, list) and len(default_value) > 0:
@@ -347,7 +343,7 @@ class ListConfigField(BaseConfigField):
             pass
 
 class SelectionConfigField(BaseConfigField):
-    def __init__(self, default_value="", value_options=None, widget_type='',  tooltip='', heading='General', category='', flags=None):
+    def __init__(self, default_value="", value_options=None, widget_type='',  tooltip='', heading='General', category='', flags=None, **kwargs):
         super().__init__(
             default_value=default_value,
             widget_type=widget_type,
@@ -374,22 +370,33 @@ class SelectionConfigField(BaseConfigField):
         if value in self.options:
             self.widget.setCurrentText(str(value))
 
+
 class MultiSelectionConfigField(BaseConfigField):
-    def __init__(self, default_value:Optional[Iterable[str]]=None, value_options:Optional[Iterable[str]]=None, widget_type='', tooltip='', heading='General', category='', flags=None):
+    def __init__(
+        self,
+        default_value: Optional[Iterable[str]] = None,
+        value_options: Optional[Iterable[str]] = None,
+        widget_type="",
+        tooltip="",
+        heading="General",
+        category="",
+        flags=None,
+        **kwargs,
+    ):
         super().__init__(
             default_value=default_value or [],
             widget_type=widget_type,
             tooltip=tooltip,
             heading=heading,
             category=category,
-            flags=flags
+            flags=flags,
         )
         self.options = value_options if value_options is not None else []
 
         # TODO enable control flag
         self.extensible = True
 
-        # setup selection list 
+        # setup selection list
         self.list_widget = QListWidget()
         self.list_widget.setSelectionMode(QListWidget.SelectionMode.MultiSelection)
         self.list_widget.setStyleSheet(Style.list_widget_style)
@@ -399,7 +406,7 @@ class MultiSelectionConfigField(BaseConfigField):
             self.list_widget.addItem(item)
             if default_value and opt in default_value:
                 item.setSelected(True)
-        
+
         if self.extensible:
             widget = self.make_extensible()
         else:
@@ -418,7 +425,7 @@ class MultiSelectionConfigField(BaseConfigField):
         for i in range(self.list_widget.count()):
             item = self.list_widget.item(i)
             item.setSelected(item.text() in values)
-    
+
     def make_extensible(self):
         # 1. Create a container and a vertical layout
         container = QWidget()
@@ -428,41 +435,41 @@ class MultiSelectionConfigField(BaseConfigField):
         # 3. Setup the custom text entry field
         self.custom_input = QLineEdit()
         self.custom_input.setPlaceholderText("Type a custom option and press Enter...")
-        
+
         # Connect the Enter key to our custom method
         self.custom_input.returnPressed.connect(self.add_custom_option)
 
         # 4. Add widgets to the layout
         layout.addWidget(self.list_widget)
         layout.addWidget(self.custom_input)
-        
+
         return container
 
     def add_custom_option(self):
         """Adds text from the QLineEdit to the list if it doesn't already exist."""
         text = self.custom_input.text().strip()
-        
+
         if text:
             # Check for duplicates
             existing_items = [self.list_widget.item(i).text() for i in range(self.list_widget.count())]
-            
+
             if text not in existing_items:
                 item = QListWidgetItem(text)
                 self.list_widget.addItem(item)
                 self.options.append(text)  # Keep internal options list updated
-                
+
                 # Automatically select the newly added item
                 item.setSelected(True)
-                
+
                 # Optional: If you need to alert the parent form that a change occurred
-                # self.list_widget.itemSelectionChanged.emit() 
+                # self.list_widget.itemSelectionChanged.emit()
 
         # Clear the text entry field so it's ready for another input
         self.custom_input.clear()
 
 
 class TupleConfigField(BaseConfigField):
-    def __init__(self, default_value=(0, 0), widget_type='', tooltip='', heading='General', category='', flags=None):
+    def __init__(self, default_value=(0, 0), widget_type='', tooltip='', heading='General', category='', flags=None, **kwargs):
         super().__init__(default_value=default_value, widget_type=widget_type, tooltip=tooltip, heading=heading, category=category, flags=flags)
         self.set_widget(QLineEdit())
         self.widget.setPlaceholderText("Enter comma separated integers")
@@ -508,7 +515,7 @@ class TupleConfigField(BaseConfigField):
 
 
 class SegConfigModelsField(BaseConfigField):
-    def __init__(self, default_value="", widget_type='', tooltip='', heading='General', category='', flags=None):
+    def __init__(self, default_value="", widget_type='', tooltip='', heading='General', category='', flags=None, **kwargs):
         super().__init__(default_value=default_value, widget_type=widget_type, tooltip=tooltip, heading=heading, category=category, flags=flags)
         self.widget = QTextEdit()
         self.set_value(default_value)
@@ -519,7 +526,6 @@ class SegConfigModelsField(BaseConfigField):
 
     def set_value(self, value):
         self.widget.setPlainText(yaml.dump(value))
-
 
 
 class HiddenWidget:
@@ -553,10 +559,7 @@ class HiddenWidget:
     
     def delete_self(self):
         pass
-        
-        
-        
-        
+
 
 import re
 

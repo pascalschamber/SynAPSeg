@@ -3,6 +3,7 @@
 IMG_DIR:
   default_value: null
   widget_type: path
+  display_name: Input image directory
   tooltip: "Directory containing images (root directory)."
   heading: Run Configuration
   extra:
@@ -10,6 +11,7 @@ IMG_DIR:
 GET_FILETYPE:
   default_value: ".czi"
   widget_type: str
+  display_name: File Extension
   tooltip: "File extension for the images to process."
   heading: Run Configuration
 GET_CONTENTS_FUNCTION:
@@ -17,6 +19,7 @@ GET_CONTENTS_FUNCTION:
   extra:
     value_options: ["get_contents", "get_contents_recursive"]
   widget_type: selection
+  display_name: Search Scope
   tooltip: |
     Function used to retrieve file contents.
     get_contents: retrieve files from a directory
@@ -25,6 +28,7 @@ GET_CONTENTS_FUNCTION:
 GET_FILE_PATTERN:
   default_value: null
   widget_type: str
+  display_name: Filename Regex Filter
   tooltip: |
     Regex pattern for matching files, operates on the filename (not full path).
     For more info see online resources,e.g. https://docs.python.org/3/howto/regex.html

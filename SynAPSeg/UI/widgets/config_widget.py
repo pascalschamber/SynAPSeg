@@ -105,7 +105,13 @@ class StaticParamsGroup(QWidget):
             
             # Add to layout if visual
             if hasattr(widget, 'get_widget'):
-                self.layout.addRow(HoverLabel(spec['name'], spec.get('tooltip')), widget.get_widget())
+                self.layout.addRow(
+                    HoverLabel(
+                        spec.get("display_name", spec.get("name", "<undefined name>")),
+                        spec.get("tooltip"),
+                    ),
+                    widget.get_widget(),
+                )
 
 
 class AddModelWidget(QWidget):
@@ -164,15 +170,15 @@ class PluginManagerWidget(QWidget):
         self.registry = registry
         self.on_change_callback = on_change_callback
         self.debug = debug
-        
+
         self.plugin_specs = {} # Stores specs for active plugins {scope: spec}
         self.active_models_widgets = {} # {model_name: {scope: widget}}
         self.collapsible_container = None
-        
+
         # Layout
         self.main_layout = QVBoxLayout()
         self.setLayout(self.main_layout)
-        
+
         # 1. Scrollable Container for Models
         # We start with empty dict, will populate via update_from_specs
         self.collapsible_container = ScrollableContainerWidget(
@@ -180,7 +186,7 @@ class PluginManagerWidget(QWidget):
             collapsable_widget_kwargs={'delete_callback': self.delete_model}
         )
         self.main_layout.addWidget(self.collapsible_container)
-        
+
         # 2. Add Model Widget
         self.add_widget = AddModelWidget(
             options=list(self.available_models.keys()), 
@@ -188,7 +194,7 @@ class PluginManagerWidget(QWidget):
         )
         # Add 'Add Widget' to the bottom of the scroll content area
         self.collapsible_container.scroll_content.layout().addWidget(self.add_widget)
-        
+
         # Add wrapping collapsible for the adder itself
         # (This matches original UI: "add a component" is a collapsible)
         container_for_adder = QWidget()
@@ -196,12 +202,11 @@ class PluginManagerWidget(QWidget):
         l.setContentsMargins(0,0,0,0)
         l.addWidget(self.add_widget)
         container_for_adder.setLayout(l)
-        
+
         # Note: The original code wrapped AddModelWidget in a CollapsibleWidget named "add a component"
         # We can replicate strictly or simplify. Let's replicate strictly to maintain UI feel.
         self.adder_collapsible = CollapsibleWidget('add a component', container_for_adder, deletable=False)
         self.collapsible_container.scroll_content.layout().addWidget(self.adder_collapsible)
-
 
     def update_from_specs(self, full_plugin_specs):
         """
@@ -211,50 +216,49 @@ class PluginManagerWidget(QWidget):
         """
         # Clear existing models in UI
         # self.collapsible_container.clear_widgets() # Helper method we might need to assume or use logic below
-        # ScrollableContainerWidget doesn't seem to have a clear_widgets method in previous usage, 
-        # but in original code: _clear_model_param_widgets() cleared internal dicts. 
+        # ScrollableContainerWidget doesn't seem to have a clear_widgets method in previous usage,
+        # but in original code: _clear_model_param_widgets() cleared internal dicts.
         # To clear UI, we must remove from layout.
-        
+
         # Logic to clear the scroll_content layout except the adder
         layout = self.collapsible_container.scroll_content.layout()
         while layout.count() > 1: # Keep the adder (which is last)
             item = layout.takeAt(0)
             w = item.widget()
             if w: w.deleteLater()
-            
+
         # Re-init state
         self.plugin_specs = full_plugin_specs
         self.active_models_widgets = {}
-        
+
         # Identify models
         model_names = self._get_model_names_from_specs(full_plugin_specs)
-        
+
         for model_name in model_names:
             # Extract specs for this model
             model_specs = {k:v for k,v in full_plugin_specs.items() 
                            if self._get_model_name_from_scope(k) == model_name}
-            
+
             # Build UI for this model
             self._build_model_ui(model_name, model_specs)
 
-
     def _build_model_ui(self, model_name, model_specs):
-        """Builds valid QFormLayout for a single model and adds to container."""
+        """Builds valid QFormLayout for a single plugin and adds to container."""
         param_form = QFormLayout()
         param_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.FieldsStayAtSizeHint)
         param_form.setFormAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         headings_added = set()
-        
+
         model_widgets = {}
-        
+
         for scope, spec in model_specs.items():
             # Create widget
             widget = create_widget_from_spec(spec, self.on_change_callback)
-            
+
             # Track it
             self.registry[scope] = widget
             model_widgets[scope] = widget
-            
+
             # Add to form
             if hasattr(widget, 'get_widget'):
                 # Add heading if needed
@@ -264,15 +268,21 @@ class PluginManagerWidget(QWidget):
                     hl = QLabel(f"{heading_str}")
                     hl.setStyleSheet("font-weight: bold; margin-top: 12px;")
                     param_form.addRow(hl)
-                
-                param_form.addRow(HoverLabel(spec['name'], spec.get('tooltip')), widget.get_widget())
+
+                param_form.addRow(
+                    HoverLabel(
+                        spec.get("display_name", spec.get("name", "<undefined name>")),
+                        spec.get("tooltip"),
+                    ),
+                    widget.get_widget(),
+                )
 
         self.active_models_widgets[model_name] = model_widgets
-        
+
         # Create Collapsible
         container_widget = QWidget()
         container_widget.setLayout(param_form)
-        
+
         collapsible = CollapsibleWidget(
             model_name,
             container_widget,
@@ -280,12 +290,11 @@ class PluginManagerWidget(QWidget):
             deletable=True,
             is_visible=True
         )
-        
+
         # Insert before the Adder
         layout = self.collapsible_container.scroll_content.layout()
         idx = layout.count() - 1 # Insert before last (Adder)
         layout.insertWidget(idx, collapsible)
-
 
     def add_model(self, model_class, model_name):
         """Callback for Add Button"""
@@ -293,7 +302,7 @@ class PluginManagerWidget(QWidget):
         if model_name in current_names:
             warning_dialog(self, 'Invalid Name', f'Name `{model_name}` already exists and must be unique!')
             return
-            
+
         # Generate default specs
         init_params = {model_name: {'name': model_name, self.plugin_class_key: model_class}} 
         model_config_list = self.plugin_factory.build_spec_from_user_config(init_params, update_default_values=True)
@@ -302,7 +311,6 @@ class PluginManagerWidget(QWidget):
         #     for kk, vv in v.items():
         #         for kkk, vvv in vv.items():
         #             print(kkk, vvv['current_value'])
-            
 
         # Wrap in scope structure
         # Structure: Heading -> Keys -> default_value -> specs
@@ -314,26 +322,25 @@ class PluginManagerWidget(QWidget):
                  }
              }
         }
-        
+
         # Use interpreter to flatten to UI specs
         mInterp = SchemaInterpreter.from_specs(nested_structure, plugin_headings=[self.plugin_heading])
         new_specs = mInterp.get_ui_specs(unflatten=False)
         print('\n\nnew specs')
         for k,v in new_specs.items():
             print(k, v['current_value'])
-        
+
         # Merge into our main specs
         self.plugin_specs.update(new_specs)
         print('\n\nplugin specs')
         for k,v in self.plugin_specs.items():
             print(k, v['current_value'])
-        
+
         # Build UI
         self._build_model_ui(model_name, new_specs)
-        
+
         # Signal change
         self.on_change_callback()
-
 
     def delete_model(self, model_name):
         """Callback for Delete Button on Collapsible"""
@@ -343,7 +350,6 @@ class PluginManagerWidget(QWidget):
         print('active_models_widgets')
         pprint(self.active_models_widgets.keys())
 
-        
         # Remove from UI handles
         if model_name in self.active_models_widgets:
             # Unregister specific widgets
@@ -357,12 +363,12 @@ class PluginManagerWidget(QWidget):
                     del self.plugin_specs[scope]
                 else:
                     print(f"! scope not found in plugin_specs: {scope}")
-            
+
             del self.active_models_widgets[model_name]
-        
+
         print('active_models_widgets')
         pprint(self.active_models_widgets.keys())
-            
+
         # Trigger config changed
         self.on_change_callback()
 

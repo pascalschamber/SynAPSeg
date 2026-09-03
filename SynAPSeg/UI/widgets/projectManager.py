@@ -116,7 +116,7 @@ class ProjectSelectionDialog(QWidget):
         root_dir_layout, self.root_input = browse_widget(
             "Root Directory:", 
             self.state_manager.get('project_root_directory', ''), 
-            self.browse_root_dir
+            lambda: self.browse_root_dir(trigger_update=True)
         )
         # Project dropdown selection
         project_layout = QHBoxLayout()
@@ -154,11 +154,17 @@ class ProjectSelectionDialog(QWidget):
         self.project_dropdown.addItems(projects)
         self.project_dropdown.setCurrentText(current_project)
 
-    def browse_root_dir(self):
+    def browse_root_dir(self, trigger_update=False):
         dir_path = QFileDialog.getExistingDirectory(self, "Select Root Directory")
         if dir_path:
-            self.set_project_root_directory(dir_path)
+            if trigger_update: # only trigger update when selecting project, not when creating new project
+                self.set_project_root_directory(dir_path)
+            else:
+                self.root_input.setText(dir_path)
     
+    def get_root_dir_input(self):
+        return self.root_input.text()
+            
     def set_project_root_directory(self, dir_path:str):
         self.root_input.setText(dir_path)
         self.state_manager.set('project_root_directory', dir_path)
@@ -168,7 +174,7 @@ class ProjectSelectionDialog(QWidget):
     def ok_select_project_clicked(self, selected_project, dialog, signal):
         """ update state with project root and selected project name, then emit appropriate signal """
 
-        project_root_directory = self.root_input.text()
+        project_root_directory = self.get_root_dir_input()
         self.state_manager.set_attributes({
             'project_root_directory': project_root_directory, 
             'selected_project': selected_project})

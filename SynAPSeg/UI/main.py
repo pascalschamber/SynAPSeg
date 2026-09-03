@@ -101,7 +101,7 @@ class StateManager(QObject):
         # check if these keys are in setting, if not, set default or load from user settings
         _parse_keys = {
             'segmentation_config_log_path':constants.SEG_CONFIG_PATH, 
-            'project_root_directory':get_existant_path(settings.get('PROJECTS_ROOT_DIR'))
+            'project_root_directory':get_existant_path(settings.get('PROJECTS_ROOT_DIR', []), fail_on_empty=False)
         }
 
         _settings = settings.get('UI') or {}
@@ -321,7 +321,7 @@ class MainWindow(QMainWindow):
     
     def update_available_projects(self):
         """ updates project selection drop down with project directories found in project_root_dir """
-        print('signal project_root_changed emitted')
+        print('project_root_changed. updating available projects...')
         self.state_manager.set('available_projects', self.project_manager.get_available_projects())
         
     def update_selected_project(self):
@@ -395,14 +395,15 @@ def main():
     parser.add_argument("--debug", action="store_true")
     args = parser.parse_args()
 
-    icon_path = os.path.join(constants.SYNAPSEG_BASE_DIR, "UI", "icons", "128x128.png")
 
     app = QApplication(sys.argv)
-    app.setWindowIcon(QIcon(icon_path))
-
-    # set global styles
-    app.setStyleSheet(style_sheets.tooltip_style)
     
+    # set global styles
+    app.setStyleSheet(style_sheets.global_style)
+    
+    # set app icon
+    icon_path = os.path.join(constants.SYNAPSEG_BASE_DIR, "UI", "icons", "128x128.png")
+    app.setWindowIcon(QIcon(icon_path))
     
     # --- 1. Show Splash Screen ---
     splash = SynAPSegSplashScreen(icon_path)

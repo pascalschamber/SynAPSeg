@@ -310,7 +310,7 @@ class Example:
         ann_fns = [c for c in ex_contents if any([c.startswith(pre) for pre in ann_fn_prefixes])]
         return ann_fns
     
-    def load_image_data(self, fn, collapse=True, silent=False) -> tuple[np.ndarray, str]:
+    def load_image_data(self, fn, collapse=True, silent=True) -> tuple[np.ndarray, str]:
         """ 
         load tiff array and format from ex's directory 
         

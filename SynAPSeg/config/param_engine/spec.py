@@ -21,6 +21,7 @@ def construct_paramspecs_from_scoped_dict(_schema: dict[str, Any]) -> dict[str, 
             current_value=v.get('current_value'),
             default_value=v.get('default_value'),
             widget_type=v.get('widget_type'),
+            display_name=v.get('display_name'),
             tooltip=v.get('tooltip'),
             heading=v.get('heading'),
             flags=FlagParser.parse_flags(v.get('flags')),
@@ -41,6 +42,7 @@ class ParamSpec:
     extra: Dict[str, Any] = field(default_factory=dict)
     heading: Optional[str] = None
     group: Optional[str] = None         # back-compat for segmentation model params
+    display_name: Optional[str] = None
     tooltip: Optional[str] = None
 
     @staticmethod
@@ -55,6 +57,7 @@ class ParamSpec:
             current_value=raw.get("current_value"),
             type=raw.get("type") or raw.get("widget_type"),  # back-compat mapping
             widget_type=raw.get("widget") or raw.get("widget_type"), # widget element
+            display_name=raw.get("display_name"),
             tooltip=raw.get("tooltip"),
             flags=flags,
             extra=raw.get("extra") or {},
@@ -79,6 +82,16 @@ class ParamSpec:
         if self.current_value is None:
             return self.default_value
         return self.current_value
+    
+    def _config_name_to_display_name(self, name:str):
+        """ convert snake case name to display name, e.g. replace underscores with spaces """
+        if isinstance(name, str):
+            display_name = name.replace('_', ' ').title()
+        else:
+            display_name = name
+        
+        return display_name
+        
         
     def ui_descriptor(self, filter_attrs: Optional[List[str]]=None) -> Dict[str, Any]: # prev included --> merged_values: Optional[Dict[str, Any]] = None, 
         """Build a UI-friendly descriptor for a single parameter.
@@ -102,7 +115,8 @@ class ParamSpec:
             
             "default_value": self.default_value, 
             "widget_type": self.widget_type or "text",
-            "tooltip": self.tooltip or "",
+            "display_name": self.display_name or self._config_name_to_display_name(self.name),
+            "tooltip": (self.tooltip or "") + f"<br><span style='font-weight: italic; color: grey;'>raw param name: {self.name}</span>",
             "heading": self.extra.get("heading", "General"),
             "category": self.scope.split('.')[0],
             

@@ -6,6 +6,10 @@ they can be used by importing them and calling them like:
     label.setStyleSheet(style_sheets.red_label_border)
 
 """
+from pathlib import Path
+# path to assests
+UI_DIR = Path(__file__).parent.parent
+ICON_DIR = UI_DIR / "icons"
 
 def update_stylesheet_property(widget, prop, value):
     """
@@ -58,17 +62,6 @@ green_border = StyleTemplate("""
 }}
 """)
 
-# tooltip
-##############################
-tooltip_style ="""
-    QToolTip {
-        background-color: #2b2b2b;
-        color: white;
-        border: 1px solid #444;
-        padding: 5px;
-        opacity: 230; /* Slight transparency */
-    }
-"""
 
 def format_tooltip(text):
     """Format the tooltip using HTML and respect newlines via CSS."""
@@ -77,10 +70,10 @@ def format_tooltip(text):
 
     return (f"""
     <div style='width: 300px; background-color: #2b2b2b; color: white; padding: 8px; border-radius: 4px; border: 1px solid #444;'>
-        <p style='font-size: 13px; font-weight: bold; margin-bottom: 4px; color: #3498db;'>
+        <p style='font-size: 14px; font-weight: bold; margin-bottom: 4px; color: #b39ddb;'>
             Information
         </p>
-        <p style='font-size: 12px; line-height: 1.4;'>
+        <p style='font-size: 13px; line-height: 1.4;'>
             {formatted_text}
         </p>
     </div>
@@ -103,13 +96,13 @@ list_widget_style = """
         margin-bottom: 4px;
     }
     QListWidget::item:selected {
-        background-color: #3498db;
+        background-color: #30115c; /* Darker purple */
         color: white;
         font-weight: bold;
-        border: 1px solid #5dade2;
+        border: 1px solid #794acf; /* Soft purple highlight border */
     }
     QListWidget::item:hover {
-        background-color: #2c3e50;
+        background-color: #3b2e4d; /* Subtle dark purple to replace the dark blue hover */
     }
 """
 
@@ -152,13 +145,182 @@ app_tray_tabs = """
     }
 
     /* 4. Fix the background pane (the box below the tabs) */
-    QTabBar::pane {
+    QTabWidget::pane {
         border: 1px solid #555;
         top: -1px;                 /* Overlap the tab border for a seamless look */
+        background-color: #2b2b2b; /* Prevents Windows Light Mode from making this white */
     }
 
     QTabWidget#AppTray > QTabBar::tab {
         font-size: 14pt;
         min-width: 150px;
     }
+"""
+
+# global dark theme
+global_style = f"""
+    /* Force main window and structural elements to dark */
+    QMainWindow, QWidget {{
+        background-color: #2b2b2b;
+        color: #ffffff;
+    }}
+    
+    /* Inner Tab Content Areas (Fixes the light gray background) */
+    QTabWidget::pane {{
+        background-color: #2b2b2b;
+        border: 1px solid #555;
+    }}
+
+    /* Base Input Fields */
+    QLineEdit, QComboBox, QPushButton {{
+        background-color: #3d3d3d;
+        color: #ffffff;
+        border: 1px solid #555;
+        padding: 4px;
+        border-radius: 4px;
+    }}
+    
+    /* Hover effects for inputs */
+    QLineEdit:hover, QComboBox:hover, QPushButton:hover {{
+        border: 1px solid #aaaaaa;
+    }}
+
+    /* =========================
+       CHECKBOXES
+       ========================= */
+    QCheckBox {{
+        spacing: 8px; 
+        color: #ffffff;
+    }}
+    QCheckBox::indicator {{
+        width: 16px;
+        height: 16px;
+        background-color: #3d3d3d;
+        border: 1.5px solid #888888;
+        border-radius: 3px;
+    }}
+    QCheckBox::indicator:hover {{
+        border: 1.5px solid #ffffff; 
+    }}
+    QCheckBox::indicator:checked {{
+        border: 1.5px solid #aaaaaa;
+        background-color: #41167d; 
+        image: url({ICON_DIR.as_posix()}/checkmark_white.png); 
+    }}
+
+    /* =========================
+       SPIN BOXES
+       ========================= */
+    QSpinBox, QDoubleSpinBox {{
+        background-color: #3d3d3d;
+        color: #ffffff;
+        border: 1px solid #555;
+        border-radius: 4px;
+        padding: 4px; 
+        padding-right: 25px; /* Prevent text hiding under buttons */
+    }}
+    QSpinBox:hover, QDoubleSpinBox:hover {{
+        border: 1px solid #aaaaaa;
+    }}
+
+    /* Purple Buttons */
+    QSpinBox::up-button, QDoubleSpinBox::up-button, 
+    QSpinBox::down-button, QDoubleSpinBox::down-button {{
+        subcontrol-origin: border;
+        width: 26px; 
+        background-color: #26163d; 
+        border-left: 1px solid #555; 
+    }}
+    QSpinBox::up-button, QDoubleSpinBox::up-button {{
+        subcontrol-position: top right;
+        border-top-right-radius: 3px; 
+        border-bottom: 1px solid #555; 
+    }}
+    QSpinBox::down-button, QDoubleSpinBox::down-button {{
+        subcontrol-position: bottom right;
+        border-bottom-right-radius: 3px;
+    }}
+    
+    /* Button Hover */
+    QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover,
+    QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {{
+        background-color: #9575cd; 
+    }}
+
+    /* Custom SVG Arrows */
+    QSpinBox::up-arrow, QDoubleSpinBox::up-arrow,
+    QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {{
+        width: 20px;
+        height: 20px;
+    }}
+    QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {{
+        image: url({ICON_DIR.as_posix()}/chevron_up_white.svg); 
+    }}
+    QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {{
+        image: url({ICON_DIR.as_posix()}/chevron_down_white.svg); 
+    }}
+    QSpinBox::up-arrow:off, QDoubleSpinBox::up-arrow:off,
+    QSpinBox::down-arrow:off, QDoubleSpinBox::down-arrow:off {{
+        opacity: 0.3;
+    }}
+
+    /* =========================
+       COMBO BOXES (Dropdowns)
+       ========================= */
+    QComboBox {{
+        padding-right: 30px; /* Protect text from the 26px button */
+    }}
+    
+    QComboBox QAbstractItemView {{
+        background-color: #3d3d3d;
+        color: #ffffff;
+        /* Sets the fallback highlight color */
+        selection-background-color: #30115c; 
+        border: 1px solid #555;
+        /* Removes the dotted Windows focus border on clicked items */
+        outline: none; 
+    }}
+    
+    /* Explicitly style the dropdown items when hovered or selected */
+    QComboBox QAbstractItemView::item:hover, 
+    QComboBox QAbstractItemView::item:selected {{
+        background-color: #30115c; 
+        color: #ffffff;
+    }}
+    
+    /* Purple Dropdown Button */
+    QComboBox::drop-down {{
+        subcontrol-origin: padding;
+        subcontrol-position: top right;
+        width: 26px; 
+        background-color: #26163d; 
+        border-left: 1px solid #555; 
+        border-top-right-radius: 3px;
+        border-bottom-right-radius: 3px;
+    }}
+    QComboBox::drop-down:hover {{
+        background-color: #9575cd; 
+    }}
+    
+    /* Custom SVG Arrow */
+    QComboBox::down-arrow {{
+        image: url({ICON_DIR.as_posix()}/chevron_down_white.svg); 
+        width: 20px;
+        height: 20px;
+    }}
+    QComboBox::down-arrow:off, QComboBox::down-arrow:disabled {{
+        opacity: 0.3;
+    }}
+    
+    /* =========================
+       TOOLTIPS
+       ========================= */
+    QToolTip {{
+        background-color: #2b2b2b;
+        color: #ffffff;
+        border: 1px solid #7e57c2; /* Purple border to match the spin boxes and dropdowns */
+        padding: 6px;
+        border-radius: 4px;
+    }}
+    
 """

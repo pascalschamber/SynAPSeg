@@ -32,11 +32,13 @@
 model_path:
   default_value: ""
   widget_type: path
+  display_name: Model Location
   tooltip: Path directory or file of the trained model (depending on model some take folder or specific file to load)
 
 model_input:
   default_value: null
   widget_type: str
+  display_name: Input Source
   tooltip: |
     name of another model in the pipeline which provides input to this model 
       if None assumes "raw" image is input 
@@ -45,18 +47,21 @@ model_input:
 in_dims_pipe: 
   default_value: "STCZYX"
   widget_type: str
+  display_name: Pipeline Input Dimensions
   tooltip: Dimensions of the image entering the pipeline, internally always standardized to STCZYX, extra singleton dims will added automatically 
   flags: ["hidden"]
 
 in_dims_model:
   default_value: null
   widget_type: str
+  display_name: Expected Model Input Dimensions
   tooltip: Expected input dimension format for model.predict (e.g., for a 2d model 'YX' or a 3d model 'ZYX')
   # flags: ["hidden"]
   
 out_dims_model:
   default_value: null
   widget_type: str
+  display_name: Generated Model Output Dimensions
   tooltip: |
     Dimensions of the model's output.  This can be automatically inferred from out_dims_pipe in most cases.
     The one exception is if the model's output CREATES dimensions, then this must be specifed.
@@ -65,6 +70,7 @@ out_dims_model:
 out_dims_pipe:
   default_value: "STCZYX"
   widget_type: str
+  display_name: Pipeline Output Dimensions
   tooltip: | 
     Allows for control of how the input in fed into the model.
     Output dimension format after iterating over non-reduced dimensions.
