@@ -25,6 +25,7 @@ NONPATH_ENV_VARS = {
     'PYDANTIC_ERRORS_INCLUDE_URL': '0',
 }   
 TF_FORCE_GPU_ALLOW_GROWTH = 'true' # used in segmentation_script.py
+KMP_DUPLICATE_LIB_OK = 'TRUE'      # needed as temp fix for lib multiple initializations error
 
 
 
