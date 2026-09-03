@@ -5,8 +5,9 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import pyqtSignal
 import os
 from pathlib import Path
-from .dialogs import browse_widget, dialog_ok_cancel_buttons
-from SynAPSeg.IO.project import Project
+from SynAPSeg.UI.widgets.dialogs import browse_widget, dialog_ok_cancel_buttons
+
+
 
 class ProjectManager:
     """ implements logic for getting available projects 
@@ -26,17 +27,25 @@ class ProjectManager:
         self.project_root = self.state_manager.get('project_root_directory', '')
 
         if self.project_root and Path(self.project_root).exists():
+            from SynAPSeg.IO.project import Project
+            
+            # handle user input error where project dir is selected instead of the project's root dir
+            if Project.is_project_dir(self.project_root):
+                self.project_root = str(Path(self.project_root).parent)
+                print(f"WARNING: [SynAPSeg.UI.widgets.projectManager.get_available_projects] selected project root is a project directory, correcting input to use parent directory: {self.project_root}")
+                # self.state_manager.set('project_root_directory', self.project_root)
+                self.state_manager.mainwindow.project_selector.set_project_root_directory(self.project_root)
+            
+            # normal case: list all sub-folders and check if they are projects
             files = os.listdir(self.project_root)
             ffiles = [f for f in files if Project.is_project_dir(os.path.join(self.project_root, f))]
-            if len(files) == 0:
-                print(f"cannot get_available_projects: os.listdir({self.project_root}) is empty")
-            elif len(ffiles) == 0:
-                print(f"cannot get_available_projects: Project.is_project_dir removed all possible folders")
-                
+            if len(ffiles) == 0:
+                print(f"ERROR: [SynAPSeg.UI.widgets.projectManager.get_available_projects] no projects exist at {self.project_root}")
             
             self.project_files = ffiles
         else: 
-            print(f"cannot get_available_projects: {self.project_root} or {Path(self.project_root).exists()} is invalid")
+            print(f"ERROR: [SynAPSeg.UI.widgets.projectManager.get_available_projects] project_root directory does not exist at {self.project_root}")
+            self.project_files = []
         
         return self.project_files
     
@@ -148,11 +157,13 @@ class ProjectSelectionDialog(QWidget):
     def browse_root_dir(self):
         dir_path = QFileDialog.getExistingDirectory(self, "Select Root Directory")
         if dir_path:
-            self.root_input.setText(dir_path)
-            self.state_manager.set('project_root_directory', dir_path)
-            print('in browse_root_dir, signal project_root_changed about to be emitted')
-            self.project_root_changed.emit()  # updates state's available_projects
-            self.update_project_dropdown()
+            self.set_project_root_directory(dir_path)
+    
+    def set_project_root_directory(self, dir_path:str):
+        self.root_input.setText(dir_path)
+        self.state_manager.set('project_root_directory', dir_path)
+        self.project_root_changed.emit()  # updates state's available_projects
+        self.update_project_dropdown()
 
     def ok_select_project_clicked(self, selected_project, dialog, signal):
         """ update state with project root and selected project name, then emit appropriate signal """

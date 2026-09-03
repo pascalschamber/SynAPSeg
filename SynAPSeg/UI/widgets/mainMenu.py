@@ -157,7 +157,7 @@ def show_settings_dialog(parent=None):
 
     # Helpers for the Editor
     def update_line_edit(edit):
-        path = QFileDialog.getExistingDirectory(dialog, "Select Directory")
+        path = QFileDialog.getOpenFileName(dialog, "Select File")
         if path: edit.setText(path)
 
     def add_to_list(lw):
@@ -221,8 +221,12 @@ def show_settings_dialog(parent=None):
         with open(config_path, 'w') as f:
             yaml.dump(settings_data, f, default_flow_style=False)
         
-        # update env vars
-        verify_and_set_env_dirs({key: path for key, path in settings_data.items() if key in constants.user.keys})
+        # update env vars and UI settings
+        if parent:
+            parent.state_manager.reset_state()
+        else:
+            verify_and_set_env_dirs({key: path for key, path in settings_data.items() if key in constants.user.keys})
+            
         dialog.accept()
 
     save_btn.clicked.connect(save_and_close)

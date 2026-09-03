@@ -27,7 +27,7 @@ from SynAPSeg.UI.widgets.projectManager import ProjectManager, ProjectSelectionD
 from SynAPSeg.UI.widgets.control import handle_app_reset
 from SynAPSeg.UI.widgets import style_sheets
 
-os.environ['KMP_DUPLICATE_LIB_OK'] = 'True' # TODO: debug this, it is not mkl causing the issue, think it is the tensorflow or pytorch package import order. 
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 
 # params
 ##############################################################################
@@ -41,8 +41,9 @@ APP_MODULES = get_plugins()
 class StateManager(QObject):
     settings_changed = pyqtSignal()
     
-    def __init__(self):
+    def __init__(self, mainwindow):
         super().__init__()
+        self.mainwindow = mainwindow
         self.temp_attrs = ['current_status']
         self.settings = self.load_settings()
             
@@ -74,30 +75,46 @@ class StateManager(QObject):
         
 
     def load_settings(self):
+        from SynAPSeg.config.initial_setup import create_user_settings
+        
+        settings = {}
+        
         if not Path(SETTINGS_FILE).exists(): 
-            from SynAPSeg.config.initial_setup import create_user_settings
             create_user_settings()
+        
+        try:    
+            settings = self._load_user_settings(SETTINGS_FILE)
+        except:
+            create_user_settings()
+            settings = self._load_user_settings(constants.USER_SETTINGS_PATH)
             
-        if Path(SETTINGS_FILE).exists():
-            from SynAPSeg.utils.utils_general import get_existant_path
-            settings = read_config(SETTINGS_FILE)
-            
-            # set env vars
-            env_var_map = {k:v for k,v in settings.items() if k in constants.user.keys}
-            verify_and_set_env_dirs(env_var_map, override=True, fail_on_error=False)
+        return settings
+    
+    def _load_user_settings(self, settings_filepath:str):
+        from SynAPSeg.utils.utils_general import get_existant_path
+        settings = read_config(settings_filepath)
+        
+        # set env vars
+        env_var_map = {k:v for k,v in settings.items() if k in constants.user.keys}
+        verify_and_set_env_dirs(env_var_map, override=True, fail_on_error=False)
 
-            # check if these keys are in setting, if not, set default or load from user settings
-            _parse_keys = {
-                'segmentation_config_log_path':constants.SEG_CONFIG_PATH, 
-                'project_root_directory':get_existant_path(settings.get('PROJECTS_ROOT_DIR'))
-            }
+        # check if these keys are in setting, if not, set default or load from user settings
+        _parse_keys = {
+            'segmentation_config_log_path':constants.SEG_CONFIG_PATH, 
+            'project_root_directory':get_existant_path(settings.get('PROJECTS_ROOT_DIR'))
+        }
 
-            _settings = settings.get('UI') or {}
-            for k, v in _parse_keys.items():
-                if k not in _settings and v is not None:
-                    _settings[k] = v
-            return _settings
-        return {}
+        _settings = settings.get('UI') or {}
+        for k, v in _parse_keys.items():
+            # check if path in current UI params exists, if not use default value
+            if k in _settings.keys() and (not os.path.exists(_settings[k])): 
+                del _settings[k]
+                
+            # if key doesn't exist use the default value provided by _parse_keys
+            if k not in _settings.keys() and v is not None:
+                _settings[k] = v
+                
+        return _settings
 
     def save_settings(self):
         _settings = read_config(SETTINGS_FILE)
@@ -124,7 +141,7 @@ class MainWindow(QMainWindow):
         self.init_window_attributes()
 
         # Initialize State Manager and project Managers
-        self.state_manager = StateManager()
+        self.state_manager = StateManager(self)
         self.state_manager.set_temp_value('debug_mode', self.debug_mode)
         
         self.project_manager = ProjectManager(self.state_manager)
@@ -178,7 +195,7 @@ class MainWindow(QMainWindow):
         menu_bar = mainMenu.MenuBar(callbacks={
             'select_project':   self.project_selector.display_project_selection,
             'new_project':      self.project_selector.display_new_project,
-            'settings':         lambda: mainMenu.show_settings_dialog(self),
+            'settings':         lambda: mainMenu.show_settings_dialog(self),  # TODO: after save settings, ensure reload UI settings like 'segmentation_config_log_path'. currently state is only updated after app is restarted.
             'about':            lambda: mainMenu.show_about_dialog(self),
             'overview':         lambda: mainMenu.show_overview(self),
             'documentation':    lambda: mainMenu.open_documentation(self),
