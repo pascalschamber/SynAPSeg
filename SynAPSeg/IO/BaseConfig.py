@@ -125,31 +125,66 @@ def prepend_config_key(config_path, key, value):
     write_config(new_config, config_path)
 
 
-
+def create_scope_map(config_dict, parent_key='', sep='.'):
+    """
+    Flattens a nested dictionary into a scope map where keys encode nesting.
+    
+    Args:
+        config_dict (dict): The nested dictionary to flatten.
+        parent_key (str): The base key for the current level (used internally for recursion).
+        sep (str): The string separator used to join nested keys.
+        
+    Returns:
+        dict: A flat dictionary with scoped keys mapping to their respective values.
+    """
+    scope_map = {}
+    
+    for key, value in config_dict.items():
+        # Construct the scoped key (e.g., 'config.key1')
+        new_key = f"{parent_key}{sep}{key}" if parent_key else key
+        
+        # Store the value at the current scope level
+        scope_map[new_key] = value
+        
+        # If the value is a nested dictionary, recurse into it
+        if isinstance(value, dict):
+            nested_map = create_scope_map(value, parent_key=new_key, sep=sep)
+            scope_map.update(nested_map)
+            
+    return scope_map
 
 
 # config class 
 ################################################################################################
 class BaseConfig(MutableMapping):
-    def __init__(self, config_key, config_path=None, default_parameters_path=None, params=None, **kwargs):
-        """Object for managing reading and parsing parameters from a .yaml file.
+    def __init__(
+        self, config_key, config_path=None, default_parameters_path=None, params=None, recursive=False, **kwargs):
+        """
+        Object for managing reading and parsing parameters from a .yaml file.
             supports object and dictionary-style syntax for attribute access.
 
         Args:
-            config_key (str, or None): The key identifying which section of the config to load.
-            config_path (str): Path to the configuration file. If None and params not directly provided, raises ValueError
-            default_parameters_path (Optional[str]): path to .yaml file holding default parameters that will be set if not specified in config
+            config_key (str, or None): 
+                The key identifying which section of the config to load.
+            config_path (str): 
+                Path to the configuration file. If None and params not directly provided, raises ValueError
+            default_parameters_path (Optional[str]): 
+                path to .yaml file holding default parameters that will be set if not specified in config
                 if None, this functionality is skipped.
                 note if trying to init from default_params alone, ensure you pass params={'config_key': ''}, then read from that path
-            params (dict): dictionary containing the configuration attributes 
+            params (dict): 
+                dictionary containing the configuration attributes 
                 used for copying to set params directly without reloading 
+            recursive (bool): 
+                if true, will search for and try to resolve variable references inside nested dicts and lists 
             kwargs (dict): additional arguments which get set as attributes during init, 
                 allows side-stepping the empty params check at the bottom.
         """
         self.params = params or {}
         self.config_key = config_key
         self.config_path = config_path             
-        self.default_parameters_path = default_parameters_path            
+        self.default_parameters_path = default_parameters_path         
+        self.recursive = recursive # for handling variable references   
 
         # set kwargs
         for k,v in kwargs.items():
@@ -169,9 +204,15 @@ class BaseConfig(MutableMapping):
         
 
     def try_get_env_var(self, env_var):
+        """ try to get env var, return None if not found """
+                
         if env_var in os.environ:
             return os.environ[env_var]
+        
         return None
+    
+    def _is_env_var(self, key:str):
+        return key in constants.user.keys
     
 
     def _load_config(self):
@@ -184,7 +225,7 @@ class BaseConfig(MutableMapping):
         if self.config_path is None:
             raise ValueError('config_path is None, init with path to quantification_config.yaml')
         if not os.path.exists(self.config_path):
-            raise ValueError(f'config_path not found ({self.config_path}), init with path to quantification_config.yaml')
+            raise ValueError(f'config_path not found ({self.config_path}), set valid path to quantification_config.yaml in environment variables')
         
         configs = self._read_config(self.config_path)
         
@@ -197,6 +238,7 @@ class BaseConfig(MutableMapping):
         
         self.resolve_variable_references(self.params)
         self.resolve_unspecified_default_parameters(self.default_parameters_path, self.params)
+        
 
 
     def _read_config(self, config_path) -> Dict:
@@ -323,39 +365,122 @@ class BaseConfig(MutableMapping):
     def string_var_replacer(self, match):
         """ Replace all ${VAR} in the string with the attribute or param value """
         var_name = match.group(1)
+        
         try:
-            val = getattr(self, var_name)
-            return str(val)
-            # return val
-        except AttributeError:
-            raise KeyError(f"Variable '{var_name}' not found in config attributes.")
+            if hasattr(self, var_name):
+                val = getattr(self, var_name)
+                return str(val)
+            
+            elif self.recursive:
+                
+                if var_name in self.scoped_params.keys():
+                    val = self.scoped_params[var_name]
+                    return str(val)
+                
+                elif self._is_env_var(var_name):
+                    val = self.try_get_env_var(var_name)
+                    if val is None:
+                        raise AttributeError(f'ENV VAR not found. var reference is a defined ENV VAR but is not set in the environment')
+                    return str(val)
+                
+                # check if key is in local scope (self.current_scope, i.e. one level up the nested dict)
+                # note to get to this point, means var reference was not formally scoped
+                # e.g. using '${PROJECTS_ROOT_DIR}' instead of either "${config_key}.${PROJECTS_ROOT_DIR}" or "!ENV ${PROJECTS_ROOT_DIR}"
+                if self.current_scope is not None and isinstance(self.current_scope, str):
+                    def _recurse_keys(d:dict, keys:list[str]):
+                        _d = d
+                        for k in keys:
+                            _d = _d[k]
+                        return _d
+                    indexer = self.current_scope.split('.')[:-1]
+                    search_level_dict = _recurse_keys(self.params, indexer) # !!! assumes dict supplied to resolve variable references is self.params and not some other dict
+                    if var_name in search_level_dict.keys():
+                        print(f'succesfully found {var_name} in local scope (current_scope: {self.current_scope}) !')
+                        return str(search_level_dict[var_name])
+                    
+                raise AttributeError('recursive search failed')
+            
+            raise AttributeError()
+            
+        except Exception as e:
+            raise KeyError(f"Variable '{var_name}' not found in config attributes.") from e
     
+            
+    def apply_resolvers(self, value, key=None, scope=None):
+        """ 
+        apply resolvers over a value, iterativly trying those defined in self.resolvers, 
+            otherwise returning the input if not match the patterns 
+        
+        Args:
+            value: The value to apply resolvers to.
+            key: The key of the value. key and scope are used for recursive search 
+            scope: list of keys representing the path to the value to ensure correct scoped params are updated when recursing 
+        
+        Returns:
+            The value with resolvers applied.
+        """
+        for (pattern, replacer, resolver) in self.resolvers:
+            scope = (scope or []) + [key]
+            self.current_scope = self._keys_to_scope(scope)
+            
+            if self.is_resolvable_string(pattern, value):
+                return self._resolve_value(resolver, pattern, replacer, value, scope)
+            
+            elif isinstance(value, dict):
+                new_dict = {}
+                for k,v in value.items():
+                    self.current_scope = self._keys_to_scope(scope + [k])
+                    if self.is_resolvable_string(pattern, v):
+                        new_dict[k] = self._resolve_value(resolver, pattern, replacer, v, scope + [k])
+                        
+                    elif self.recursive and isinstance(v, (dict, list)): # recursivly parse strings in nested structures
+                        new_dict[k] = self.apply_resolvers(v, key=k, scope=scope)
+                        
+                    else:
+                        new_dict[k] = v
+                return new_dict
+            elif isinstance(value, list):
+                new_list = []
+                for v in value:
+                    if self.is_resolvable_string(pattern, v):
+                        new_list.append(self._apply_resolver(resolver, pattern, replacer, v))
+                    else:
+                        new_list.append(v)
+                        
+                if self.recursive:
+                    self.scoped_params[self._keys_to_scope(scope)] = new_list
+                    
+                return new_list
+            
+            else:
+                if self.recursive:
+                    self.scoped_params[self._keys_to_scope(scope)] = value
+            
+        return value
+    
+    
+    def _resolve_value(self, resolver, pattern, replacer, value, scope:list) -> Any:
+        try:
+            resolved_value = self._apply_resolver(resolver, pattern, replacer, value)            
+        except Exception as e:
+            context_vars = ["/n".join(f"   {k}: {v}" for k, v in zip(["scope", "value"], [scope, value]))]
+            raise KeyError(f"_resolve_value failed on a resolvable string. Context:\n{context_vars}") from e
+        
+        if self.recursive:
+            self.scoped_params[self._keys_to_scope(scope)] = resolved_value
+        return resolved_value
 
-    def get_resolver_result(self, resolver, pattern, replacer, v):
-        """ try ast.literal_eval on string returned by resolver """
+    def _apply_resolver(self, resolver, pattern, replacer, v) -> Any:
+        """ apply resolver and try ast.literal_eval on string returned by resolver """
         val = resolver(pattern, replacer, v)
         try: 
             return ast.literal_eval(val)
         except:
             return val
-
         
-    def apply_resolvers(self, value):
-        """ apply resolvers over a value, iterativly trying those defined in self.resolvers, 
-                otherwise returning the input if not match the patterns """
-        for (pattern, replacer, resolver) in self.resolvers:
-            if self.is_resolvable_string(pattern, value):
-                return self.get_resolver_result(resolver, pattern, replacer, value)
-            elif isinstance(value, dict):
-                new_dict = {}
-                for k,v in value.items():
-                    if self.is_resolvable_string(pattern, v):
-                        new_dict[k] = self.get_resolver_result(resolver, pattern, replacer, v)
-                    else:
-                        new_dict[k] = v
-                return new_dict
-        return value
-        
+    def _keys_to_scope(self, keys:list) -> str:
+        return '.'.join([str(k) for k in keys])
+    
     
     def resolve_variable_references(self, config_dict):
         """Resolve variable references in the configuration parameters.
@@ -375,10 +500,14 @@ class BaseConfig(MutableMapping):
             After calling this method:
                 self.params["EXAMPLE_PATH"] == "/data/examples/my_project"
         """
-        
+        self.scoped_params = {}
+        if self.recursive:
+            self.scoped_params = create_scope_map(config_dict)
+            
         if self.resolvers:
             for key, value in config_dict.items():
-                config_dict[key] = self.apply_resolvers(value)
+                self.current_scope = None # used for tracking local var refs in a nested dict - will attempt a match if properly scoped var is not found
+                config_dict[key] = self.apply_resolvers(value, key=key)
 
     
     def resolve_unspecified_default_parameters(self, default_parameters_path, config_dict):
@@ -396,7 +525,7 @@ class BaseConfig(MutableMapping):
             if (k not in config_dict) and isinstance(v, dict):
                 self.default_parameters_set.append(k)
                 try:
-                    config_dict[k] = self.apply_resolvers(v['default_value'])
+                    config_dict[k] = self.apply_resolvers(v['default_value'], key=k)
                 except Exception as e:
                     raise KeyError(f"{e}\n{v}")
 
@@ -569,13 +698,19 @@ def _add_param(byheading: dict, header: str, name: str, spec: dict):
     byheading[header][name] = out
 
 
-def set_headers(config_dict_vals):
+def set_headers(config_dict_vals, param_names:Optional[list[str]]=None):
     """ set headers for all values from dict with mixed headers
             this is used to convert user raw k,v params to header format - mainly putting free floating params under root header
+        args
+            param_names:
+                optional list of keys that are not headers - this should be provided if a params value is a dict as it would other wise be interpreted as a header
     """
+    param_names = param_names or []
     byheading = {}
     for k,v in config_dict_vals.items():
-        _is_header = True if isinstance(v, dict) else False
+        # a dict is a header if it is not in param_names
+        _is_header = True if (isinstance(v, dict) and k not in param_names) else False
+        
         header = 'root' if not _is_header else k
         if header not in byheading:
             byheading[header] = {}
@@ -618,14 +753,19 @@ def validate_header_spec_format(config_dict, check_keys=['default_value', 'widge
     return all(is_header_spec(v, check_keys) for v in config_dict.values())
 
 def update_header_spec_values(model_params, model_configuration_spec, update_value_key='current_value'):
-    """ update values in fully spec'd config form 'raw' model_params (e.g. from seg_config.yaml)
-        e.g. update value with those specified in user's config
-        returns fully spec'd config with default values updated 
-        previously update_value_key='default_value', so just updated the default value
-    """
-    # user input has mixed headings (no root header) --> need to convert to byheading fmt 
-    byheadings_model_dict = set_headers(model_params)
+    """ 
+    update values in fully spec'd config from 'user' model_params (e.g. from seg_config.yaml)
         
+    returns:
+        fully spec'd config with default values updated 
+        previously update_value_key='default_value', so just updated the default value
+        
+    """
+    # user input has mixed headings (plugins have no root header) --> need to convert to byheading fmt 
+    # because model specs do have the root header. otherwise the indexing is off 
+    # byheadings_model_dict = set_headers(model_params)
+    byheadings_model_dict = {'root': model_params}
+    
     # update config values with user's values
     assert is_dict_of_dicts(byheadings_model_dict)
 
@@ -633,8 +773,11 @@ def update_header_spec_values(model_params, model_configuration_spec, update_val
     for header, param_val_pairs in byheadings_model_dict.items():
         for param_name, param_val in param_val_pairs.items():
             try:
-                # model_configuration_spec[header][param_name]['default_value'] = param_val 
+                # if model_configuration_spec[header][param_name]['widget_type'] == 'dict':
+                #     # in this case 
+                
                 model_configuration_spec[header][param_name][update_value_key] = param_val
+                
             except Exception as e:
                 print(
                     f"Error: {e}\nheader: {header}\n param_name: {param_name}\n update_value_key: {update_value_key}\n param_val: {param_val}\nensure parameter exists in plugin default parameters config"

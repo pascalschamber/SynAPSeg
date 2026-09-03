@@ -13,13 +13,15 @@ PLUGIN_BASE_CLASS = 'SegmentationModel'
 REQUIRED_SIGNAL = {'__plugin_group__': 'model'}
 CORE_PLUGINS = ['Stardist', 'Neurseg'] # display in this order
 PLUGIN_PATTERN = '.*\.py$' # if filename.endswith(".py")
+PLUGIN_PARAM_MAP = {'Model': 'MODEL_PARAMS'}
 
 ModelPluginFactory = BasePluginFactory(
     PLUGINS_DIRS, 
     CORE_PLUGINS, 
     PLUGINS_DEFAULT_PARAMETERS_PATH, 
     PLUGIN_PATTERN, 
-    PLUGIN_SIGNAL=REQUIRED_SIGNAL
+    PLUGIN_SIGNAL=REQUIRED_SIGNAL,
+    PLUGIN_PARAM_MAP=PLUGIN_PARAM_MAP
 )
 
 def get_available_models() -> List[str]:

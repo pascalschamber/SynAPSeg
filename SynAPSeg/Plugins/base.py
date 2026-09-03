@@ -24,7 +24,7 @@ import ast
 from SynAPSeg.utils import utils_general as ug
 from SynAPSeg.IO.BaseConfig import BaseConfig, read_config, merge_default_parameters # move to baseconfig class operations 
 
-# TODO: DEPRECATE these functions once segmentation module has been converted 
+# TODO: DEPRECATE these functions once segmentation module has been converted
 def get_available_plugins(plugins_dir, module_pattern=r'^(?!__)[\w.-]+\.py$', sort_keys=[]) -> dict[str, str]:
     """get model module paths from subdirectory
     returns dict mapping model names to the path of its module (e.g. "stardist": "...SynAPSeg\models\plugins\stardist.py") 
@@ -159,13 +159,15 @@ class BasePluginFactory:
         CORE_PLUGINS,
         PLUGINS_DEFAULT_PARAMETERS_PATH,
         PLUGIN_PATTERN,
-        PLUGIN_SIGNAL: Dict[str, Any]   # e.g. {'__plugin_group__': 'quantification'}
+        PLUGIN_SIGNAL: Dict[str, Any],   # e.g. {'__plugin_group__': 'quantification'}
+        PLUGIN_PARAM_MAP: Dict[str, str]   # e.g. {'Model': 'MODEL_PARAMS'} or {'Stages': 'STAGE_PARAMS'}
     ):
         self.PLUGINS_DIRS = PLUGINS_DIRS            # dirs to search
         self.CORE_PLUGINS = CORE_PLUGINS            # plugins to load in order
         self.PLUGINS_DEFAULT_PARAMETERS_PATH = PLUGINS_DEFAULT_PARAMETERS_PATH # global default params that specifc modules may override
         self.PLUGIN_PATTERN = PLUGIN_PATTERN         # regex pattern to match plugin files
         self.PLUGIN_SIGNAL = PLUGIN_SIGNAL            # signal to match plugin files
+        self.PLUGIN_PARAM_MAP = PLUGIN_PARAM_MAP      # map from plugin header to parameter key
 
         self.PLUGINS = discover_plugins(
             PLUGINS_DIRS, 
@@ -174,25 +176,6 @@ class BasePluginFactory:
         )
 
         self._module_cache = {}
-
-    def load_module(self, plugin_name):
-        """check if already imported, otherwise look for plugin by name and load by .py path"""
-
-        if plugin_name in self._module_cache:
-            return self._module_cache[plugin_name]
-        
-        if plugin_name not in self.PLUGINS.keys():
-            # handle model back-compat (used to be all lowercase but that interfers with imports)
-            if plugin_name.lower().capitalize() in self.PLUGINS.keys():
-                print(f"Warning: plugin of class `{plugin_name}` is not in the list of available plugins. Using `{plugin_name.lower().capitalize()}` instead.")
-                plugin_name = plugin_name.lower().capitalize()
-            else:
-                raise KeyError(f"plugin of class ({plugin_name}) not found. Must be one of {self.PLUGINS.keys()}")
-
-        module_path = self.PLUGINS[plugin_name]
-        module = load_module_from_path(plugin_name, module_path)
-        self._module_cache[plugin_name] = module
-        return module
 
     def get_plugin(self, plugin_name: str, **kwargs):
         """Dynamically loads an available plugin"""
@@ -211,50 +194,181 @@ class BasePluginFactory:
 
         return plugin_class(**kwargs)
 
+    def load_module(self, plugin_name):
+        """check if already imported, otherwise look for plugin by name and load by .py path"""
+
+        if plugin_name in self._module_cache:
+            return self._module_cache[plugin_name]
+
+        if plugin_name not in self.PLUGINS.keys():
+            # handle model back-compat (used to be all lowercase but that interferes with imports)
+            if plugin_name.lower().capitalize() in self.PLUGINS.keys():
+                print(f"Warning: plugin of class `{plugin_name}` is not in the list of available plugins. Using `{plugin_name.lower().capitalize()}` instead.")
+                plugin_name = plugin_name.lower().capitalize()
+            else:
+                raise KeyError(f"plugin of class ({plugin_name}) not found. Must be one of {self.PLUGINS.keys()}")
+
+        module_path = self.PLUGINS[plugin_name]
+        module = load_module_from_path(plugin_name, module_path)
+        self._module_cache[plugin_name] = module
+        return module
+
     def get_plugin_default_parameters(self, plugin_name: str) -> Dict:
         """ update global default cfg with plugins (if any) """
         module = self.load_module(plugin_name)
         return get_plugin_default_parameters(module, global_default_paramaters_path=self.PLUGINS_DEFAULT_PARAMETERS_PATH)
 
-    def build_spec_from_user_config(self, param_values: Dict[str, Any], update_default_values=True):
-        """ 
-        builds fully spec'd param config from user's config values 
+    def build_spec_from_user_config(
+        self, 
+        plugins_params: Dict[str, Any], 
+        update_default_values=True
+    ) -> dict[str, dict[str, dict[str, dict[str, Any]]]]: # dict[plugin_name, dict[header, dict[param_key, param_spec]]]
+        """
+        convert user plugins param values to fully spec'd params (organized by header) for specified plugins
             this is invoked to build config interpreter with UI compatible model params
-        
+            can simulataneously merge a `minimal` user config dict[plugin_name, plugin_params] with plugin's default param specs
+            `minimal` here refers to fact that the full param spec can be built from a dict containing just:
+                - keys: plugin alias (name)
+                - values: plugin params dict
+                - example: {'object_detection': {'plugin_class': 'object_detection'}}
+
         Args:
-            param_values: user's non-spec param values which provide pipeline structure (e.g. SEG_CONFIG.MODEL_PARAMS)
+            plugins_params:
+                dict mapping plugin aliases to plugin param values (e.g. SEG_CONFIG.MODEL_PARAMS or QUANT_CONFIG.STAGE_PARAMS)
                 example: {'stardist_3d': {'model_class': 'stardist',
                         'model_path': '...\\models/stardist3d_2025_0422_v2.420_aug_wRotate_32x128x128',
-                        'in_dims_model': 'ZYX', 'out_dims_pipe': 'STCZYX'},}
-            update_default_values: if True updates the returned param spec with the user-defined values
-        
-        Returns: a dict representing fully spec'd params 
-            example: 
-                {'stardist_3d': {'root': {
-                    'model_path': {
-                        'default_value': '',
+                        'in_dims_model': 'ZYX', 'out_dims_pipe': 'STCZYX'} ...}
+            update_default_values:
+                if True updates the returned param spec with the user-defined values
+                if False just return model_specs
+
+        Returns:
+            a dict where keys are plugin aliases and values are fully spec'd params.
+            format: dict[plugin_name, dict[header, dict[param_key, param_spec]]]
+            Example:
+            {'stardist_3d':  # plugin name
+                {'root':     # header
+                    {'model_path': # param key
+                        {'default_value': '',  # param spec
                         'widget_type': 'path',
                         'tooltip': 'Path to directory containing the trained model',
                         'flags': ['required'],
                         'extra': {'path_type': 'directory'},
                         'group': 'root',
                         'current_value': '...\\models/stardist3d_2025_0422_v2.420_aug_wRotate_32x128x128'
-                    },
-                    'in_dims_model': ...
+                        },
+                    'in_dims_model': {...},
+                    ...
+                }
+            }
         """
-        from SynAPSeg.IO.BaseConfig import update_header_spec_values
-        update_default_values = True  # if model_config is just the widget spec don't update values, just return model_specs
-        plugin_params_specs = {}
 
-        for plugin_name, plugin_config in param_values.items():
+        plugin_params_specs = {}
+        for plugin_name, plugin_config in plugins_params.items():
             plugin_config['plugin_class'] = plugin_config.get('plugin_class') or plugin_name
             plugin_config['name'] = plugin_config.get('name') or plugin_name
-            # plugin_config['output_dirname'] = plugin_config.get('output_dirname') or plugin_config['name']
-
+            
             plugin_specs = self.get_plugin_default_parameters(plugin_config['plugin_class'])
+
             if update_default_values:
-                plugin_specs = update_header_spec_values(plugin_config, plugin_specs)
+                plugin_specs = self.update_param_specs_from_raw_user_config(plugin_specs, plugin_config)
 
             plugin_params_specs[plugin_name] = plugin_specs
 
         return plugin_params_specs
+
+    def update_param_specs_from_raw_user_config(
+        self,
+        plugin_specs: dict,
+        raw_user_config: dict[str, Any],
+        update_value_key: str = "current_value",
+    ) -> dict[str, dict[str, dict]]:
+        """
+        Update the plugin_specs with the values from the raw_user_config
+        
+        Args:
+            plugin_specs: dict[header, dict[param_key, paramspec]]
+                dict of param specs grouped by header
+            raw_user_config: dict[header | param_key, dict[param_key, param_value] | param_value]
+                dict of raw user params where keys are mix of 
+                grouped params (with header) and individual params (without header)
+            update_value_key:
+                key in param spec to update with user's value
+                implementation is intended to update current_value but can update any key 
+        
+        Returns: 
+            dict: plugin_specs where current value has been set using raw_user_config
+        """
+
+        groupped_param_headers = self.get_groupped_param_headers(plugin_specs)
+        user_config_by_headings = self.santize_user_config_headings(raw_user_config, groupped_param_headers)
+
+        for header, param_val_pairs in user_config_by_headings.items():
+            for param_name, param_val in param_val_pairs.items():
+                try:
+                    plugin_specs[header][param_name][update_value_key] = param_val
+
+                except Exception as e:
+
+                    print(
+                        f"Error: {e}\n\nheader: {header}\n param_name: {param_name}\n update_value_key: {update_value_key}\n param_val: {param_val}\nensure parameter exists in plugin default parameters config"
+                    )
+                    if header not in plugin_specs:
+                        print(f"error: header {header} not found in plugin specs")
+                    elif param_name not in plugin_specs[header]:
+                        print(f"error: param_name {param_name} not found in plugin specs[{header}]")
+                    elif update_value_key not in plugin_specs[header][param_name]:
+                        print(f"error: update_value_key {update_value_key} not found in plugin specs[{header}][{param_name}]")
+                    else:
+                        print('unknown error, ensure parameter exists in plugin default parameters config')
+
+                    raise ValueError()
+
+        return plugin_specs
+
+    def get_groupped_param_headers(self, plugin_specs:dict) -> list[str]:
+        """ 
+        parse headers of groupped params from heading grouped param specs 
+            looks at param_specs group attribute to check if it's not 'root' 
+            if not 'root' adds it to the returned list of unique group headers
+        Args:
+            plugin_specs: dict of param specs grouped by header
+        
+        Returns: 
+            list[str]: list of unique group headers (that are not 'root')
+            
+        """
+        groupped_param_headers = set()
+        for header, dict_of_paramSpecs in plugin_specs.items():
+            if header == 'root': 
+                continue 
+            if isinstance(dict_of_paramSpecs, dict):
+                for param_name, param_spec in dict_of_paramSpecs.items():
+                    if not isinstance(param_spec, dict): 
+                        continue
+                    param_header_group = param_spec.get('group')
+                    groupped_param_headers.add(param_header_group)
+        return list(groupped_param_headers)
+
+    def santize_user_config_headings(self, raw_user_config: dict[str, Any], headings:list[str]) -> dict[str, dict]:
+        """
+        set headers for all values from dict with mixed headers - mainly putting free floating params under root header
+            function determines whether each key in params is a header or a param name
+            individual params need to then be put into a 'root' header
+        args:
+            raw_user_config:
+                dict of raw user params where keys are mix of 
+                grouped params (with header) and individual params (without header)
+            headings:
+                list of param headers                
+        """
+        byheading = {}
+        for k,v in raw_user_config.items():
+
+            if k in headings and isinstance(v, dict): # is a known param header
+                byheading[k] = v
+            else:
+                if 'root' not in byheading: 
+                    byheading['root'] = {}
+                byheading['root'][k] = v # other wise gets groupped under root
+        return byheading

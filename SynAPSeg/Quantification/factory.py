@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 import os
-from typing import Any, Dict, List
-
 from SynAPSeg.config import constants
 from SynAPSeg.Plugins.base import BasePluginFactory
 
@@ -14,9 +12,15 @@ PLUGIN_BASE_CLASS = 'BasePipelineStage'
 REQUIRED_SIGNAL = {'__plugin_group__': 'quantification'}
 CORE_PLUGINS = ['roi_handling', 'object_detection', 'colocalization'] # display in this order
 PLUGIN_PATTERN = '.*\.py$' # if filename.endswith(".py")
+PLUGIN_PARAM_MAP = {'Stages': 'STAGE_PARAMS'}
 
 QuantificationPluginFactory = BasePluginFactory(
-    PLUGINS_DIRS, CORE_PLUGINS, PLUGINS_DEFAULT_PARAMETERS_PATH, PLUGIN_PATTERN, REQUIRED_SIGNAL
+    PLUGINS_DIRS,
+    CORE_PLUGINS,
+    PLUGINS_DEFAULT_PARAMETERS_PATH,
+    PLUGIN_PATTERN,
+    REQUIRED_SIGNAL,
+    PLUGIN_PARAM_MAP,
 )
 
 
