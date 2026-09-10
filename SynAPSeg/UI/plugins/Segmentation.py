@@ -133,20 +133,10 @@ class MainApp(BaseApp):
                 return
         
         self.printr('\n\n running segmentation with built config', built_config)
-         
-            
-        # fetch config key
-        CONFIG_KEY = self.state_manager.get('selected_project')
-        if not CONFIG_KEY: 
-            raise ValueError(f"CONFIG_KEY must be set, but got: {CONFIG_KEY}")
-        
+                 
         # update seg config log with current key, params
-        seg_config_path = self.state_manager.get("segmentation_config_log_path")
-        if not seg_config_path: 
-            raise ValueError(f"seg_config_path must be set, but got: {seg_config_path}")
-        if not os.path.exists(seg_config_path): 
-            raise ValueError(f"seg_config_path does not exist, got: {seg_config_path}")
-        
+        CONFIG_KEY = self.get_current_project()
+        seg_config_path = self.get_config_log_path()
         if not self._running_in_test_mode:
             built_config['image_filepaths_to_process'] = None
         prepend_config_key(seg_config_path, CONFIG_KEY, built_config)
@@ -172,6 +162,21 @@ class MainApp(BaseApp):
         """ extract run config input from interp, used after widget has updated values """
         validated_config = get_interpreter_run_config(self.interp)
         return validated_config
+    def get_current_project(self):
+        """ returns the config key"""
+        CONFIG_KEY = self.state_manager.get('selected_project')
+        if not CONFIG_KEY: 
+            raise ValueError(f"CONFIG_KEY must be set, but got: {CONFIG_KEY}")
+        return CONFIG_KEY
+
+    def get_config_log_path(self):
+        """ get the path to the segmentation config log """
+        seg_config_path = self.state_manager.get("segmentation_config_log_path")
+        if not seg_config_path: 
+            raise ValueError(f"seg_config_path must be set, but got: {seg_config_path}")
+        if not os.path.exists(seg_config_path): 
+            raise ValueError(f"seg_config_path does not exist, got: {seg_config_path}")
+        return seg_config_path
     
     def handle_run_worker_complete(self, result):
         """ 
@@ -181,8 +186,25 @@ class MainApp(BaseApp):
         
         if result is not None:
             # assumes pipeline was run in test mode
-            print('run worker complete, handling non None result..')
+            print('run worker complete, displaying results..')
+
             viewer = spawn_napari_segmentation_viewer(*result) # arr, predictions, ex_md = result
+
+            # update config so normal segmentation script behavior is enabled for next run 
+            update_params = {
+                'WRITE_OUTPUT': True,
+                'RETURN_OUTPUT': False,
+                'image_filepaths_to_process': None
+            }
+            built_config = self.get_built_config()
+            built_config.update(update_params)
+            prepend_config_key(
+                self.get_config_log_path(), 
+                self.get_current_project(), 
+                built_config
+            )
+
+
 
     
 
