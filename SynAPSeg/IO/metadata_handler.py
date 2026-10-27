@@ -141,6 +141,8 @@ class MetadataParser:
                 elif fn.lower().endswith('.geojson'):
                     from SynAPSeg.Plugins.ABBA import core_regionPoly
                     val = core_regionPoly.polyCollection(file_path)
+                elif fn.lower().endswith('.csv'):
+                    val = pd.read_csv(file_path)
                 else:
                     raise ValueError(f"Cannot parse file {fn}")
                 outkey = ug.get_prefix(fn) if use_prefix_as_key else fn
@@ -152,8 +154,8 @@ class MetadataParser:
         if not silent:
             print('Loaded:')
             for k, v in out.items():
-                if isinstance(v, np.ndarray):
-                    print(f"  {k}: {v.shape}")
+                if isinstance(v, (np.ndarray, pd.DataFrame)):
+                    print(f"  {k}: <{type(v)}> {v.shape}")
 
         if validate_shapes_and_format:
             if exmd is None:
@@ -178,7 +180,9 @@ class MetadataParser:
         for k, v in image_dict.items():
             if k == 'metadata':
                 continue
-
+            if not isinstance(v, np.ndarray):
+                continue
+                
             shape = list(v.shape)
 
             # Auto-set shape if not already defined
@@ -227,7 +231,7 @@ class MetadataParser:
 
     @staticmethod
     def get_imgdb_colocal_nuclei_info(exmd):
-        """use provided channel info and imgdb object to setup colocalization parameters (see utils_ImgDB.py) """
+        """use channel info in exmd and colocalization parameters to setup input for creating an imgdb object (see utils_ImgDB.py) """
         # add all channels as clcs
         image_channels = [dict(name=v, ch_idx=i, colocal_id=i) for i, (k,v) in enumerate(exmd['data_metadata']['channel_info'].items())]
         # add colocalizations to perform based on inputed channel mapping 
@@ -423,7 +427,7 @@ class MetadataParser:
     def write_data_to_example(ex:Example, data, filename, fmt, tiff_metadata=None, OUTPUT_IMAGE_PYRAMID=False) -> None:
         success=False
         if isinstance(data, np.ndarray):
-            from IO.writers import write_array
+            from SynAPSeg.IO.writers import write_array
             write_array(data, ex.path_to_example, filename, fmt, ex.exmd, tiff_metadata=tiff_metadata, OUTPUT_IMAGE_PYRAMID=OUTPUT_IMAGE_PYRAMID)
             success = True
         else:

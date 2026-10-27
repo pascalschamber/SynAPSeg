@@ -47,7 +47,7 @@ import yaml
 
 from SynAPSeg.utils import utils_general as ug
 from SynAPSeg.config import constants
-
+from SynAPSeg.utils.utils_ImgDB import ImgDB
 
 
 if TYPE_CHECKING:
@@ -411,7 +411,7 @@ class Example:
             conf_path=None,
             default_params_path=None,
             colocalizations=None,
-        ):
+        ) -> ImgDB:
         """ 
         fetch or make ImgDB colocalization information 
 
@@ -421,7 +421,6 @@ class Example:
             conf_key (str) - optional, key in quant config. defaults to self.project_name
         """
         from SynAPSeg.IO.BaseConfig import BaseConfig, read_config
-        from SynAPSeg.utils.utils_ImgDB import ImgDB
         from SynAPSeg.IO.metadata_handler import MetadataParser
 
         conf_key = conf_key or self.project_name
@@ -440,12 +439,9 @@ class Example:
                 colocalizations = qparams['STAGE_PARAMS']['colocalization']['COLOCALIZATIONS'] # new format
             
             else:
-                raise ValueError('config file does not have a colocalization stage associated.')
+                print('Warning - config file does not have a colocalization stage associated. Proceeding with base channels as only colocal_ids')
+                colocalizations = []
             
-            # colocalizations = qparams['COLOCALIZATIONS'] # old format
-            
-                           
-
         self.exmd.update({'COLOCALIZE_PARAMS':{"colocalizations":colocalizations}})
         image_channels, clc_nuc_info = MetadataParser.get_imgdb_colocal_nuclei_info(self.exmd)
         imgdb = ImgDB(image_channels=image_channels, colocal_nuclei_info=clc_nuc_info)
@@ -605,10 +601,12 @@ class Example:
     
     def get_px_scaling(self):
         """ 
-        get the px scaling from own metadata, with backcompatibility 
+        returns pixel sizes for each image dimension from own metadata
         
         returns
-            dict[str, float] - like {'X': 0.07059082892416223, 'Y': 0.07059082892416223, 'Z': 0.7699999999999998}
+            dict[str, float]
+                keys are the dimension axis names and values are the px scaling along that axis 
+                e.g. {'X':0.071, 'Y':0.071, 'Z':0.767}
         """
         from ast import literal_eval
         
@@ -619,7 +617,8 @@ class Example:
             elif isinstance(scaling_raw, dict):
                 return scaling_raw
             else:
-                raise ValueError(scaling_raw)
+                raise ValueError(
+                    f"scaling must be a dict or string-wrapped dict (e.g. '{{'X':0.071, 'Y':0.071, 'Z':0.767}}'), but got type: {type(scaling_raw)}, value: {scaling_raw}")
         return None
         
     # def update_image_scaling_metadata(self) -> bool:
@@ -684,6 +683,32 @@ class Example:
             assert seg_res_path.endswith('.svg')
             array = load_svg(seg_res_path)
         return array
+    
+    def get_exported_ROIs_metadata(self):
+        """
+        return the exported ROIs metadata as dict where keys are filenames and values is a dictionary containing 
+        information about the ROIs in that file
+        
+        example: 
+            {'annotated_shapes.csv': 
+                {
+                    'ROI_TYPE': 'napari_csv',
+                    'features': {'custom': {0: '', 1: '', 2: ''},
+                    'name': {0: 'HPC', 1: 'CA1', 2: 'CA3'},
+                    'type': {0: 'exclusive', 1: 'exclusive', 2: 'exclusive'}},
+                    'ndim': 2,
+                    'parent_layer_name': 'raw_img_ch2',
+                'parent_layer_shape': [16028, 16027]
+                }
+            }
+        """
+        return (self.exmd.get('data_metadata') or {}).get('ROI_exports') or {}
+
+    def discover_napari_shapeLayerROIs(self, fn_pattern=".*\.(csv|geojson)") -> list[str]:
+        exROIS = self.exmd['data_metadata'].get('ROI_exports') or {}
+        ex_shapeLayer_ROIs = [k for k in exROIS.keys() if (exROIS[k].get('ROI_TYPE') in ('napari_csv', 'geojson'))]
+        present_shapeLayer_ROIs = [k for k in ex_shapeLayer_ROIs if k in self.get_filenames(fn_pattern, fail_on_empty=False)]
+        return present_shapeLayer_ROIs
 
 
 class Project:
@@ -819,14 +844,6 @@ class Project:
     def get_metadata_parser(self) -> type['MetadataParser']:
         """ returns metadata parser class - exists to centralize and avoid import conflicts """
         return get_MetadataParser()
-    
-    def get_all_unique_filenames(self, pattern: str = r".*\\..*") -> set[str]:
-        """ returns a set of all filenames found in each example directory """
-        files = set()
-        for ex in self.examples:
-            for f in ex.get_filenames(pattern=pattern, fail_on_empty=False):
-                files.add(f)
-        return files
     
 
     def batch_attach_data(self, new_data_mds:list[dict], example_names: Optional[str | list[str]] = None) -> None:
@@ -1034,13 +1051,20 @@ class Project:
             MetadataParser = get_MetadataParser()
             path_to_examples_dir = os.path.join(project_path, examples_dir_name)
             example_dirs = os.listdir(path_to_examples_dir)
-            conds = (
+            conds = [
                 os.path.exists(project_path), 
                 os.path.exists(path_to_examples_dir),
                 len(example_dirs) > 0,
-                any([len(MetadataParser.try_get_metadata(os.path.join(path_to_examples_dir, exdir)))>0 for exdir in example_dirs]),
-            )
+                False                                   # placeholder for metadata check below
+            ]
+            # check if any example dirs have metadata
+            for exdir in example_dirs:
+                if len(MetadataParser.try_get_metadata(os.path.join(path_to_examples_dir, exdir))) > 0:
+                    conds[-1] = True
+                    break # exiting early here is vastly more efficient than previous full loop implementation
+
             return all(conds)
+            
         except Exception as e:
             if not fail_silently: 
                 print(f'is_project_dir failed:\n{e}\n')
