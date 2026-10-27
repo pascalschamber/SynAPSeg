@@ -25,6 +25,7 @@ dependencies = [
     "stardist",
     "tensorflow",              # "tensorflow<2.11", technically only req for windows native GPU support
     "glasbey",
+    "packaging",
 ]
 
 # to test 

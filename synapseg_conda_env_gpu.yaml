@@ -41,7 +41,7 @@ dependencies:
       - albumentations
 
       # ---- all other libraries  ----
-      - "napari[all]"
+      - "napari[all]" # testing with upgrade from 0.6.2 --> 0.7.1
       - seaborn
       - ipykernel
       - tabulate
