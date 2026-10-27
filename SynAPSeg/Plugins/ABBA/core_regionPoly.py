@@ -15,9 +15,11 @@ from pathlib import Path
 from timeit import default_timer as dt
 from numba import jit, types
 from numba.typed import List as numbaList
-from typing import Dict, Any, Optional, Iterable, List, Tuple
+from typing import Dict, Any, Optional, Iterable, List, Tuple, Callable
 from shapely.geometry import Polygon as shapelyPolygon, MultiPolygon as shapelyMultiPolygon, mapping, shape
+from shapely.geometry.base import BaseGeometry as shapelyBaseGeometry
 from shapely.ops import unary_union
+from geojson import FeatureCollection
 import matplotlib.pyplot as plt
 import matplotlib.path as mplPath
 import matplotlib.patches as patches
@@ -150,7 +152,12 @@ def get_empty_multi_nb():
 
 # main processing functions
 ##################################################
-def constrain_region_area_by_rois(region_polys, roi_regionPolys, um_per_pixel:float=1.0):
+def constrain_region_area_by_rois(
+    region_polys, 
+    roi_regionPolys, 
+    um_per_pixel:float=1.0,
+    region_prop_functions: Optional[Dict[str, Callable]] = None,
+):
     """
     Intersect each region polygon with each ROI polygon and compute constrained
     region areas and corresponding clipped polygons.
@@ -169,6 +176,12 @@ def constrain_region_area_by_rois(region_polys, roi_regionPolys, um_per_pixel:fl
         ROI polygon objects supporting `.to_shapely()` and `.reg_id` (ROI ID).
     um_per_pixel : float, optional
         Pixel size in microns for area conversion.
+    region_prop_functions : Optional[Dict[str, callable]]
+        Dictionary mapping region property names to functions that compute them
+        These functions must take as input:
+            (a shapely polygon/multipolygon geometry, optional um_per_pixel float) 
+        and return a float.
+        These operate on the constrained region polygon
 
     Returns
     -------
@@ -187,9 +200,22 @@ def constrain_region_area_by_rois(region_polys, roi_regionPolys, um_per_pixel:fl
             regpoly = ageojsonPoly.to_shapely()
 
             # two different? methods of getting area, seem to be largely similar??
-            regpoly_c = regpoly.intersection(roipoly)
+            try:
+                regpoly_c = regpoly.intersection(roipoly)
+            except Exception as e: 
+                msg = (f"Error intersecting region {ageojsonPoly.obj_i} with ROI {aroipoly.reg_id}: {e}")
+                raise RuntimeError(msg) from e
 
             roi_i = aroipoly.reg_id
+            
+            reg_props = {}
+            for prop_key, prop_func in region_prop_functions.items():
+                try:
+                    reg_props[prop_key] = prop_func(regpoly_c, um_per_pixel=um_per_pixel)
+                except Exception as e: 
+                    msg = (f"Error computing {prop_key} for region {ageojsonPoly.obj_i} with ROI {aroipoly.reg_id}: {e}")
+                    print(msg)
+                    reg_props[prop_key] = np.nan
 
             roi_poly_df.append(dict(
                 roi_i=roi_i,
@@ -204,6 +230,7 @@ def constrain_region_area_by_rois(region_polys, roi_regionPolys, um_per_pixel:fl
                 region_area_um = pixel_to_um(regpoly_c.area, pixel_size_in_microns=um_per_pixel),
                 region_area_mm = pixel_to_mm(regpoly_c.area, pixel_size_in_microns=um_per_pixel),
                 # itx_polyObj = regpoly_c,
+                **reg_props,
             ))
 
             # convert itx shapely poly back to geojson poly
@@ -218,6 +245,8 @@ def constrain_region_area_by_rois(region_polys, roi_regionPolys, um_per_pixel:fl
                     st_level=ageojsonPoly.st_level,
                     acronym=ageojsonPoly.acronym,
                     roi_i=roi_i,
+                    properties=ageojsonPoly.properties,
+                    name=ageojsonPoly.name,
                 )
 
             _constrained_regionPolys[roi_i].append(constrained_gjp) # TODO need to create geojson poly from this constrained poly
@@ -339,6 +368,19 @@ class polyCollection:
         patch_collection.set_array(np.array(_values))
         return patch_collection
     
+    def to_geojson(self) -> dict:
+        """ Convert to dict in GeoJSON FeatureCollection format """
+        return {
+            "type": "FeatureCollection",
+            "features": [p.to_geojson_feature() for p in self.polygons]
+        }
+    def to_geojson_featurecollection(self) -> FeatureCollection:
+        """ Convert to GeoJSON FeatureCollection object """
+        return FeatureCollection(self.to_geojson())
+    
+    def write(self, filepath):
+        write_geojson_featureCollection(filepath, self.to_geojson_featurecollection())
+    
     def __iter__(self):
         return iter(self.polygons)
 
@@ -409,7 +451,7 @@ class geojsonPoly:
         self.n_interiors = None
         self.exts = None # list of (N, 2) arrays
         self.ints = None # list of (M, 2) arrays
-        self.ints2ext = None # dict mapping index of exterior poly -> indices of associated interiors
+        self.ints2ext = {} # dict mapping index of exterior poly -> indices of associated interiors
         self.obj_i = None
         self.roi_i = None # used if constraining regions to rois
         
@@ -494,18 +536,52 @@ class geojsonPoly:
         
     
     
-    def to_shapely(self):       
+    def to_shapely(self, offset=None) -> shapelyBaseGeometry:       
         """ convert to shapely polygon """ 
-        if self.polytype == 'Polygon':
-            return self._make_polygon(0)
-        else:
-            return shapelyMultiPolygon([self._make_polygon(i) for i in range(len(self.get_exts()))])
+        
+        def _wrap(self) -> shapelyBaseGeometry:
+            if self.polytype == 'Polygon':
+                return self._make_polygon(0)
+            else:
+                return shapelyMultiPolygon([self._make_polygon(i) for i in range(len(self.get_exts()))])
+            
+        def _trans(poly, offset):
+            """Shift coordinates so (xmin, ymin) becomes the new (0, 0) origin"""
+            from shapely.affinity import translate
+            return translate(poly, xoff=-offset[0], yoff=-offset[1])
+            
+        
+        _as_shapely = _wrap(self)
+        
+        if offset is not None:
+            _as_shapely = _trans(_as_shapely, offset)
+        
+        return _as_shapely
+                
     
     def _make_polygon(self, ext_idx) -> shapelyPolygon:
         """ helper fxn for converting to a shapely single polygon """
         exterior = self.get_exts()[ext_idx]
         holes = [self.ints[i] for i in self.ints2ext.get(ext_idx, [])]
         return shapelyPolygon(exterior, holes if holes else None)
+    
+    def get_numpy_coords(self):
+        """ 
+        convert to list of numpy arrays using standard conventions 
+        returns
+            list[np.ndarray] | list[list[np.ndarray]]
+            list[list[np.ndarray] is returned if there are holes
+        """
+        coords = []
+        for ext_idx, ext in enumerate(self.get_exts()):
+            holes = [self.ints[i] for i in self.ints2ext.get(ext_idx, [])]
+            if holes:
+                coords.append([np.array(ext)] + [np.array(self.ints[hole_idx]) for hole_idx in holes])
+            else:
+                coords.append(np.array(ext))
+        return coords
+            
+        
 
 
     def extract_info(self):
@@ -517,8 +593,13 @@ class geojsonPoly:
         """get area of regions to include minus areas to exclude"""
         return sum(polygon_area(a) for a in self.get_exts()) - sum(polygon_area(a) for a in self.ints)
         
-    def get_region_extent(self):
-        """get bounding box of all polygons comprising this region"""
+    def get_region_extent(self) -> list[float]:
+        """
+        get bounding box of all polygons comprising this region
+        
+        returns:
+            list[float]: [minx, miny, maxx, maxy]
+        """
         return list(get_polygons_extent(self.get_exts() + self.ints))
     
     def get_atlas_coords(self, atlas_measurements_keys=['Atlas_X', 'Atlas_Y', 'Atlas_Z']):
@@ -539,9 +620,19 @@ class geojsonPoly:
         return obj_output
 
 
-    def to_geojson_polygon(self):
+    def to_geojson_polygon(self) -> dict:
         """returns a geojson.geometry polygon object - Polygon, MultiPolygon (e.g. geojson.geometry.Polygon)"""
         return getattr(geojson, self.polytype)(self.coords)
+    
+    def _sanitize_properties(self, properties):
+        """ ensure json serializable - no numpy objects """
+        
+    def to_geojson_feature(self) -> dict:
+        return {
+            'type': 'Feature',
+            'properties': self.properties,
+            'geometry': self.to_geojson_polygon(),
+        }
     
     def get_coords_gen(self):
         """ Yields the coordinates from a Feature or Geometry """
@@ -629,14 +720,11 @@ class geojsonPoly:
         minx, maxx, miny, maxy = array[:, 0].min(), array[:, 0].max(), array[:, 1].min(), array[:, 1].max()
         return (minx, maxx, miny, maxy)
     
-
-
-
-
-
+    
     def to_patch(self, **patch_kwargs):
         """
         Convert a to Shapely Polygon or MultiPolygon to a list of matplotlib.patches.Polygon
+            note: holes are ignored because matplotlib.patches.Polygon does not support holes
 
         Parameters:
         - patch_kwargs: keyword arguments passed to matplotlib.patches.Polygon
@@ -789,9 +877,21 @@ def shapely_to_geojson(geom, properties: dict | None = None) -> dict:
         "geometry": mapping(geom)
     }
 
-def from_shapely(_shapelyPolygon, obj_i:Optional[int]=None, reg_id:Optional[int]=None, region_name:Optional[str]=None, reg_side:Optional[str]=None, st_level:Optional[int]=None, acronym:Optional[str]=None, roi_i:Optional[int]=None, **attrs) -> geojsonPoly:
-    """ convert a shapely polygon object to a geojson poly object """
-    geojsonFeatureElement = shapely_to_geojson(_shapelyPolygon)
+
+def from_shapely(
+    _shapelyPolygon,
+    obj_i: Optional[int] = None,
+    reg_id: Optional[int] = None,
+    region_name: Optional[str] = None,
+    reg_side: Optional[str] = None,
+    st_level: Optional[int] = None,
+    acronym: Optional[str] = None,
+    roi_i: Optional[int] = None,
+    properties: Optional[dict] = None,
+    **attrs, # name (i.e. the prefered default alias acronym/region_name/custom)
+) -> geojsonPoly:
+    """convert a shapely polygon object to a geojson poly object"""
+    geojsonFeatureElement = shapely_to_geojson(_shapelyPolygon, properties=properties)
 
     return geojsonPoly(
         geojsonFeatureElement,
@@ -804,6 +904,7 @@ def from_shapely(_shapelyPolygon, obj_i:Optional[int]=None, reg_id:Optional[int]
         roi_i=roi_i,
         **attrs,
     )
+
 
 # handling parsing napari shapes
 #################################################################################
@@ -914,8 +1015,21 @@ def write_geojson_featureCollection(outpath, featureCollection) -> None:
     """ write a geojson FeatureCollection to disk """
     from geojson import FeatureCollection, dump
     assert isinstance(featureCollection, FeatureCollection)
+    # santize features for serialization 
+    featureCollection['features'] = [sanitize_for_json(feat) for feat in featureCollection['features']]
     with open(outpath, 'w') as f:
         dump(featureCollection, f)
+
+def sanitize_for_json(obj):
+    if isinstance(obj, dict):
+        return {k: sanitize_for_json(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [sanitize_for_json(v) for v in obj]
+    if isinstance(obj, np.generic):
+        return obj.item()
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    return obj
 
 
 def load_geojson_objects(geojson_path, filter_ABBA_region_features=True, feature_filter_condition=None):

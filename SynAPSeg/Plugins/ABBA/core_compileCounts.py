@@ -234,11 +234,24 @@ def make_PRP_LUT_merged(
     return PRP_LUT
 
 def extract_counts(
-        rpdf, region_df, PRP_LUT, 
-        POPULATION_INDEXERS,REGION_INDEXERS,
-        extract_mean_columns, get_region_df_cols
+        rpdf,                           # rpdf: detection dataframe where rows are individual objects
+        region_df,                      # region_df: region dataframe - with poly_i and regional info
+        PRP_LUT,                        # 
+        POPULATION_INDEXERS,            # col names used to index object populations where labels are unique
+        REGION_INDEXERS,                # col names used to index a unique set of regions
+        extract_mean_columns=None,      # col names to extract means over
+        get_region_df_cols=None,        # col names to extract from region df
     ):
     """ propogate counts and extract region props over the heirarchy """
+    # parse columns 
+    from SynAPSeg.Analysis.df_utils import filter_present_cols
+    get_region_df_cols = region_df.columns if get_region_df_cols is None else filter_present_cols(region_df, get_region_df_cols)
+    nonprop_cols = POPULATION_INDEXERS + REGION_INDEXERS + ['poly_index'] + get_region_df_cols
+    if extract_mean_columns is not None:
+        extract_mean_columns = filter_present_cols(rpdf, extract_mean_columns)
+    else:
+        extract_mean_columns = rpdf.columns.difference(nonprop_cols, sort=False)
+
     
     # TODO update LUTs to use single flat index composed of population, structural index and poly i
     count_rows = []

@@ -5,8 +5,18 @@ STRUCTS_PATH:
   tooltip: |
     Path to structures .csv file for the registered atlas
     Must contain columns: name,	acronym,	id,	structure_id_path,	parent_structure_id
-    This may be found in {home_location}\.brainglobe\{atlas_name}
+    SynAPSeg includes the kim mouse 10um structures (..\SynAPSeg\Plugins\ABBA\kim_mouse_10um_v1.1_structures.csv)
+    If you have run ABBA registration before, these may be found in {home_location}\.brainglobe\{atlas_name}
 
+POLY_REGION_PROPS:
+  default_value: []
+  widget_type: multi-selection
+  tooltip: | 
+    additional region properties to compute for each poly in region_df (beyond area/perimeter in px)
+    - poly_region_prop_longest_path: computes the longest path through the polygon geometry
+  extra:
+    value_options: ['poly_region_prop_longest_path']
+    
 # EXCLUSION ROI HANDLING
 ROIS_NAME:
   default_value: "to_exclude_areas.csv"
