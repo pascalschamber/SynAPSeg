@@ -234,6 +234,8 @@ class Ontology:
         Args:
             source: Path to JSON file or pandas DataFrame with ontology data
         """
+        self.source = source
+        
         if isinstance(source, str): 
             self.ont_ids = self._load_from_json(source)
         elif isinstance(source, pd.DataFrame):

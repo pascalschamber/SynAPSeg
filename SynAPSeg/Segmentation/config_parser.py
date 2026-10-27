@@ -166,7 +166,8 @@ class ConfigParser:
     def _setup_model_params(self) -> None:
         """Setup model parameters output directories"""
         # init model params template for each example
-        for model_name, params in self.config.MODEL_PARAMS.items():
+        plugins_params = self.config.get('MODEL_PARAMS') or {} # keys are plugin names, values are dicts of params for that plugin
+        for model_name, params in plugins_params.items():
             if params is None:
                 continue
            
@@ -255,7 +256,6 @@ def init_model_attributes(self):
         model_config_specs[m] = ModelPluginFactory.get_plugin_default_parameters(m)
     model_config_specs = model_config_specs
 
-    
     return available_models, model_config_specs
 
 def interpret_run_config(PROJECT_NAME, default_params_path:Optional[str]=None, seg_config_path:Optional[str]=None):
@@ -297,7 +297,9 @@ def get_merged_values(SEG_CONFIG:BaseConfig):
     from SynAPSeg.models.factory import ModelPluginFactory    
     merged_values['Model']['MODEL_PARAMS'] = {
         'default_value': None, 
-        'current_value': ModelPluginFactory.build_spec_from_user_config(SEG_CONFIG.MODEL_PARAMS, update_default_values=True)
+        'current_value': ModelPluginFactory.build_spec_from_user_config(
+            SEG_CONFIG.MODEL_PARAMS or {}, update_default_values=True
+        )
     }
     
     return merged_values

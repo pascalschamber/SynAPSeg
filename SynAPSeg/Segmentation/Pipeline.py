@@ -10,9 +10,9 @@ from SynAPSeg.models.factory import ModelPluginFactory
 from SynAPSeg.models.base import SegmentationModel
 
 
-def build_segmentation_pipeline(config):
+def build_segmentation_pipeline(model_params: dict) -> 'SegmentationPipeline':
     """ constructor function for building a pipeline from a config object """
-    model_params = config['MODEL_PARAMS']
+
     models = []
     for model_name, params in model_params.items():
         model_type = params.get('plugin_class') or model_name
@@ -21,8 +21,8 @@ def build_segmentation_pipeline(config):
         except Exception as e:
             tb = traceback.format_exc()
             raise ValueError (f"Error initializing model ({model_type}) with params:\n\t{params}\n{tb}")
-    pipeline = SegmentationPipeline(models)
-    return pipeline
+    
+    return SegmentationPipeline(models)
 
 
 class SegmentationPipeline:
