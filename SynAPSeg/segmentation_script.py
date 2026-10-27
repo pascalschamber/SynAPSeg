@@ -100,7 +100,7 @@ def main(
     # setup dispatchers and pipeline
     #############################################
     dispatchers = DispatcherCollection(SEG_CONFIG)
-    pipeline = segpipe.build_segmentation_pipeline(SEG_CONFIG)
+    pipeline = segpipe.build_segmentation_pipeline(SEG_CONFIG.get('MODEL_PARAMS') or {})
             
     _disp_slice = slice(*disp_i_slice)
     for disp in dispatchers[_disp_slice]:     
@@ -153,9 +153,10 @@ def main(
 
             OutputHandler.write_output(
                 ex_md, arr, predictions, pipeline, SEG_CONFIG, img_obj,
-                generate_summary = bool(1),
-                generate_mip = not SEG_CONFIG['USE_EXISTING'],
+                generate_summary = SEG_CONFIG.get('GENERATE_SUMMARY', True),
+                generate_mip = False if SEG_CONFIG['USE_EXISTING'] else SEG_CONFIG.get('GENERATE_MIP', True),
                 overwrite_raw_img = not SEG_CONFIG['USE_EXISTING'],
+                squeeze=bool(1),                                       
             )
             dispatchers.edited_examples.append(disp.image_i)
             
