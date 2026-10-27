@@ -3,14 +3,14 @@ import os
 import subprocess
 from PyQt6.QtWidgets import QMessageBox, QApplication
 
-def handle_app_reset(parent_widget=None):
+def handle_app_restart(parent_widget=None):
     """
     Restarts the current program, handling paths with spaces correctly.
     """
     reply = QMessageBox.warning(
         parent_widget, 
-        "Reset Application", 
-        "This will restart the application. Proceed?",
+        "Restart Application", 
+        "Any unsaved changes will be lost. Proceed?",
         QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
     )
 

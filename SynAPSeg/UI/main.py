@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtGui import QIcon, QPixmap, QPainter, QPen, QColor, QFont
 from PyQt6.QtCore import QObject, pyqtSignal, Qt, QTimer, QVariantAnimation, QRectF
-from PyQt6.QtWidgets import QSplashScreen
+
 
 import importlib.util
 import json
@@ -24,8 +24,10 @@ from SynAPSeg.UI.widgets.download import DownloadWindow
 from SynAPSeg.UI.widgets.toolbars import ToolBar, StatusBar
 from SynAPSeg.UI.widgets.debugging import create_debug_console
 from SynAPSeg.UI.widgets.projectManager import ProjectManager, ProjectSelectionDialog
-from SynAPSeg.UI.widgets.control import handle_app_reset
+from SynAPSeg.UI.widgets.control import handle_app_restart
 from SynAPSeg.UI.widgets import style_sheets
+from SynAPSeg.UI.windows.splash_screen import SplashScreen
+from SynAPSeg.utils import utils_general as ug
 
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 
@@ -137,17 +139,20 @@ class StateManager(QObject):
 class MainWindow(QMainWindow):
     def __init__(self, debug_mode=False):
         super().__init__()
+        self.load_timer = ug.Timer(mode='splits')
         self.debug_mode = debug_mode
         self.init_window_attributes()
+        self.load_timer('Time to init main window attributes')
 
         # Initialize State Manager and project Managers
         self.state_manager = StateManager(self)
         self.state_manager.set_temp_value('debug_mode', self.debug_mode)
-        
+        self.load_timer('Time to init state_manager')
         self.project_manager = ProjectManager(self.state_manager)
-                
+        self.load_timer('Time to init project_manager')
         # emit only after full init
         self.state_manager.settings_changed.connect(self.update_ui_from_state)
+        self.load_timer('Time to connect update_ui_from_state')
                       
         # Main Layout
         self.central_widget = QWidget()
@@ -155,10 +160,12 @@ class MainWindow(QMainWindow):
         self.layout = QVBoxLayout()
         self.central_widget.setLayout(self.layout)
         
+        self.load_timer('Time to build main layout')
 
         # main window widgets
         #######################################################
         # Menubar
+        
         self.menu_bar = self.build_menu()
         
         # TODO: implement toolbar functions in sub apps 
@@ -167,24 +174,38 @@ class MainWindow(QMainWindow):
         
         # StatusBar
         self.status_bar = self.build_statusbar()
-                
+        self.load_timer('Time to build menu/status bars')
+
         # app tray
         self.app_tray, self.apps = self.build_app_tray()
-        
+        # self.load_timer('Time to build app tray')
         # state display 
         if self.debug_mode: 
             self.build_state_display_widgets()
 
             # debug console
             self.console, self.console_window = self.build_console_window()
+            self.load_timer('Time to build debug display')
         
 
         # update state
         self.state_manager.set("current_status", "Setup complete.")
-        
+        print(self.load_timer)
+
+        from SynAPSeg.updater.version_checker import check_for_updates_on_startup
+        from SynAPSeg.updater.updater_dialog import PipUpgradeDialog
+
+        # Non-blocking startup update check
+        check_for_updates_on_startup(
+            parent_window=self,
+            package_name="SynAPSeg",
+            timeout=3.0
+        )
 
     def build_menu(self):
         """Instantiate menu bar"""
+        from SynAPSeg.updater.updater_dialog import PipUpgradeDialog
+
         # menu objects 
         self.project_selector = ProjectSelectionDialog(self.state_manager)
         self.project_selector.project_root_changed.connect(self.update_available_projects)
@@ -199,12 +220,13 @@ class MainWindow(QMainWindow):
             'about':            lambda: mainMenu.show_about_dialog(self),
             'overview':         lambda: mainMenu.show_overview(self),
             'documentation':    lambda: mainMenu.open_documentation(self),
+            'check_updates':    lambda: PipUpgradeDialog(self).exec(),
             'download_models':  lambda: DownloadWindow(
                                         parent = self, 
                                         url = "https://zenodo.org/records/18988899/files/Models.zip?download=1",
                                         save_path = os.path.join(Path(constants.USER.MODELS_BASE_DIR).parent, "Models.zip")
             ),
-            'reset':            lambda: handle_app_reset(self),
+            'restart_app':      lambda: handle_app_restart(self),
         })
         self.setMenuBar(menu_bar)
         return menu_bar
@@ -293,10 +315,15 @@ class MainWindow(QMainWindow):
             app_path = Path(os.path.join(UI_DIRNAME, script))
             if app_path.exists():
                 module_name = f"{UI_DIRNAME}.{script[:-3]}"  # Remove .py extension
-                self.apps[name] = self.load_app_module(module_name, app_path)
+                app_module = self.load_app_module(module_name, app_path)
+                app_name = app_module.get_app_name() or name
+                self.apps[app_name] = app_module
+                self.load_timer(f"Time to load {app_name}")
+                
 
         for name, app in self.apps.items():
-            self.app_tray.addTab(app, name)
+            display_name = name.replace('_', ' ').title()
+            self.app_tray.addTab(app, display_name)
     
     def load_app_module(self, module_name, module_path):
         """
@@ -347,44 +374,7 @@ class MainWindow(QMainWindow):
             self.status_bar.update_current_project(selected_project)
         
         
-class SynAPSegSplashScreen(QSplashScreen):
-    def __init__(self, icon_path):
-        pixmap = QPixmap(icon_path)
-        super().__init__(pixmap)
-        
-        self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.FramelessWindowHint)
-        
-        self.rotation = 0
-        self.current_opacity = 0.0
 
-        # Fade-in Animation
-        self.fade_anim = QVariantAnimation(self)
-        self.fade_anim.setStartValue(0.0)
-        self.fade_anim.setEndValue(1.0)
-        self.fade_anim.setDuration(1000)
-        self.fade_anim.valueChanged.connect(self._handle_fade)
-        self.fade_anim.start()
-
-        # Rotation Timer
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self._update_spinner)
-        self.timer.start(5)
-
-    def _handle_fade(self, value):
-        self.setWindowOpacity(value)
-
-    def _update_spinner(self):
-        self.rotation = (self.rotation + 10) % 360
-        self.update() 
-
-    def update_status(self, message):
-        """Public method to change the loading text."""
-        # Align center, bottom, white color, with a slight offset for the spinner
-        self.showMessage(
-            message, 
-            Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignBottom, 
-            Qt.GlobalColor.white
-        )
 
 
 def main():
@@ -406,7 +396,7 @@ def main():
     app.setWindowIcon(QIcon(icon_path))
     
     # --- 1. Show Splash Screen ---
-    splash = SynAPSegSplashScreen(icon_path)
+    splash = SplashScreen(icon_path)
     splash.show()
     splash.update_status("Loading ...")
     

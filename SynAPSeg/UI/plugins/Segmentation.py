@@ -132,7 +132,7 @@ class MainApp(BaseApp):
             if not built_config['image_filepaths_to_process']:
                 return
         
-        self.printr('\n\n running segmentation with built config', built_config)
+        # self.printr('\n\n running segmentation with built config', built_config)
                  
         # update seg config log with current key, params
         CONFIG_KEY = self.get_current_project()
@@ -203,6 +203,7 @@ class MainApp(BaseApp):
                 self.get_current_project(), 
                 built_config
             )
+            self.load_project_seg_config()
 
 
 

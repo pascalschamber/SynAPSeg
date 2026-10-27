@@ -32,16 +32,8 @@
 model_path:
   default_value: ""
   widget_type: path
-  display_name: Model Location
+  display_name: Path to model
   tooltip: Path directory or file of the trained model (depending on model some take folder or specific file to load)
-
-model_input:
-  default_value: null
-  widget_type: str
-  display_name: Input Source
-  tooltip: |
-    name of another model in the pipeline which provides input to this model 
-      if None assumes "raw" image is input 
 
 
 in_dims_pipe: 
@@ -54,18 +46,17 @@ in_dims_pipe:
 in_dims_model:
   default_value: null
   widget_type: str
-  display_name: Expected Model Input Dimensions
+  display_name: Model Input Dimensions
   tooltip: Expected input dimension format for model.predict (e.g., for a 2d model 'YX' or a 3d model 'ZYX')
-  # flags: ["hidden"]
-  
+    
 out_dims_model:
   default_value: null
   widget_type: str
-  display_name: Generated Model Output Dimensions
+  display_name: Model Output Dimensions
   tooltip: |
     Dimensions of the model's output.  This can be automatically inferred from out_dims_pipe in most cases.
     The one exception is if the model's output CREATES dimensions, then this must be specifed.
-  flags: ["hidden"]
+  flags: ["advanced"]
 
 out_dims_pipe:
   default_value: "STCZYX"
@@ -91,21 +82,42 @@ out_dims_pipe:
         2) While if you wanted to apply the same model slice-by-slice over the volume,
             out_dims_pipe = 'ZYX'
 
+model_input:
+  default_value: null
+  widget_type: str
+  display_name: Connect Input Model
+  tooltip: |
+    optionally select another model in the pipeline to provide input to this model 
+      if None assumes "raw" image is input
+
 dimension_handling:
   default_value: {}
   widget_type: dict
   tooltip: apply reductions in order specified by dimension_handling, when provided 
   flags: ["hidden"]
 
+skip_axes_inds:
+  display_name: Skip Indices Along Dimensions
+  default_value: null
+  widget_type: dict_any_list
+  tooltip: |
+    define indices along a dimension to not prediction on
+    Example:
+      `{'C': [0,2]}`
+      Will only generate predictions on channel 1, but not 0 or 2
+  flags: ["advanced"]
+
 expand_result:
   default_value: true
   widget_type: bool
   tooltip: controls whether dimensions of result returned by self.run should be filled with singleton dimensions that were reduced during prediction
+  flags: ["hidden"]
 
 debug:
   default_value: false
   widget_type: bool
   tooltip: Print debug information during model run
+  flags: ["advanced"]
 
 default_reduce_fxn:
   default_value: null
@@ -118,7 +130,7 @@ default_reduce_fxn:
       custom functions are supported 
         must accept kwarg: axis=int. 
         can provide string represenation of module path to the function (module must be in models namespace)
-
+  flags: ["advanced"]
 
 
 # preprocessing_kwargs: Optional[dict] = None,
@@ -135,15 +147,17 @@ preprocessing_kwargs:
     widget_type: str
     tooltip: Axes to apply pre-processing function over. if None will be inferred via --> [d for d in self.out_dims_pipe if d not in self.in_dims_model]
     group: preprocessing_kwargs
+    flags: ["advanced"]
 
   dtype:
     default_value: "float32"
     widget_type: str
     tooltip: Output of preprocessing will be converted to this dtype
     group: preprocessing_kwargs
+    flags: ["advanced"]
 
   norm:
-    default_value: [1, 99.8]
+    default_value: [1, 99.99]
     widget_type: tuple
     tooltip: |
       Normalization percentile range for the input to the preprocessing function. 
@@ -162,6 +176,7 @@ preprocessing_kwargs:
     widget_type: bool
     tooltip: clip values to range (0, 1)
     group: preprocessing_kwargs
+    flags: ["advanced"]
 
 # belongs to load_model_kwargs
 ###################################
@@ -184,6 +199,7 @@ postprocessing_kwargs:
     widget_type: str
     tooltip: Axes to apply post-processing function over. if None will be inferred via --> [d for d in self.in_dims_pipe if d not in self.out_dims_model]
     group: postprocessing_kwargs
+    flags: ["advanced"]
 
 # belongs to train_kwargs
 ###################################

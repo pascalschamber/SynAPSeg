@@ -1,19 +1,19 @@
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QListWidget, QStackedWidget, QWidget, QVBoxLayout, QPushButton, 
     QFileDialog, QLabel, QLineEdit, QHBoxLayout, QComboBox, QTextEdit, QSizePolicy,QFormLayout, 
-    QLayout,
+    QLayout, QListWidget
 )
 from PyQt6.QtCore import Qt
 import os
 import sys
 from pathlib import Path
 
-from SynAPSeg.UI.plugins.__base import BaseApp
-from SynAPSeg.UI.widgets.config_fields import field_widget
 from SynAPSeg.IO.project import Project, Example
 from SynAPSeg.IO.metadata_handler import MetadataParser
+from SynAPSeg.UI.plugins.__base import BaseApp
+from SynAPSeg.UI.widgets.config_fields import field_widget
 from SynAPSeg.UI.widgets.dialogs import warning_dialog
-
+from SynAPSeg.UI.widgets import style_sheets as Style
 class MainApp(BaseApp):
     def __init__(self, state_manager):
         super().__init__(state_manager)
@@ -28,10 +28,14 @@ class MainApp(BaseApp):
         ############################
 
         # Dropdown for selecting an example the project directory
-        self.example_folders_dropdown = QComboBox()
+        self.selected_example = "" # initialize with empty string, not "Select an example" which is a literal value
+        self.example_folders_dropdown = QListWidget()
+        self.example_folders_dropdown.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
+        self.example_folders_dropdown.setStyleSheet(Style.list_widget_style)
         self.example_folders_dropdown.setSizePolicy(QSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed))
-        self.example_folders_dropdown.addItem("Select an example")
-        self.example_folders_dropdown.currentIndexChanged.connect(self._on_select_example)
+        # self.example_folders_dropdown.addItem("Select an example")
+        # self.example_folders_dropdown.currentIndexChanged.connect(self._on_select_example)
+        self.example_folders_dropdown.itemSelectionChanged.connect(self._on_select_example)
 
         # select an example to load
         example_layout = QHBoxLayout()
@@ -55,16 +59,24 @@ class MainApp(BaseApp):
     def populate_example_folders(self):
         """Populates the dropdown with files from the selected project root directory."""
         self.example_folders_dropdown.clear()
-        self.example_folders_dropdown.addItem("Select an example")
+        # self.example_folders_dropdown.addItem("Select an example")
         
         exdir = self.get_examples_directory()
         if exdir and Path(exdir).exists():
             self.example_folders_dropdown.addItems(os.listdir(exdir))
+            item = self.example_folders_dropdown.item(0)
+            if item:
+                self.example_folders_dropdown.setCurrentItem(item)
 
                 
     def _on_select_example(self):
         self.previous_fns_selection = self.current_fns_selection
-        self.selected_example = self.example_folders_dropdown.currentText()
+        
+        selected_item = self.example_folders_dropdown.currentItem()
+        if selected_item is not None:
+            self.selected_example = selected_item.text()
+        else:
+            self.selected_example = ""
     
         if self.selected_ex_is_valid(self.selected_example):
             self.state_manager.set("selected_example", self.selected_example)
@@ -106,6 +118,10 @@ class MainApp(BaseApp):
         # exmd = ex.get_metadata()
         all_fns = sorted(list(ex.get_filenames(fn_pattern))) 
         
+        # discover exported shapes layers
+        present_shapeLayer_ROIs = ex.discover_napari_shapeLayerROIs()
+        all_fns.extend(present_shapeLayer_ROIs)
+                
         set_selected_include_only = self.parse_include_fns_on_switch_example(all_fns)
         
         widgets = {

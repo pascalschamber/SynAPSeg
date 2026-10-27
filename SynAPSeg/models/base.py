@@ -25,7 +25,8 @@ class SegmentationModel(ABC):
         out_dims_model: str = '',
         name: Optional[str] = None,
         model_input: Optional[str] = None,
-        dimension_handling: Optional[dict] = None, 
+        dimension_handling: Optional[dict] = None,
+        skip_axes_inds: Optional[dict[str, list[int]]] = None, 
         expand_result: bool = True,
         debug: bool = False,
         default_reduce_fxn: Optional[Callable] = None, 
@@ -60,6 +61,8 @@ class SegmentationModel(ABC):
             dimension_handling (dict(dim_str: callable | str), or None): define functions to apply when reducing specific dimensions. if a string tries to load function using importlib.
                 Otherwise, the default_reduce_fxn is applied (maximum intensity projection).
                 The passed function must have a kwarg for axis=x, which gets passed from the index of the dim_str.
+            skip_axes_inds (dict(dim_str: list[int]), or None): define indices to not run prediction on
+                for example if you only want to predict on channel 1 but not 0 or 2 pass skip_axes_inds={'C': [0,2]} 
             kwargs (dict): Dict containing parameters e.g. for preprocessing, prediction, postprocessing
         """
         self.in_dims_model = in_dims_model
@@ -82,6 +85,21 @@ class SegmentationModel(ABC):
         self.iter_array_dims = ''
         self.iter_dims = ''
         self.reduce_dims = ''
+        self.skip_axes_inds = skip_axes_inds or {}
+        
+        if self.skip_axes_inds: # validate input
+            try: 
+                assert isinstance(self.skip_axes_inds, dict), f"skip_axes_inds must be a dict but got: {type(self.skip_axes_inds)}"
+                for k,v in self.skip_axes_inds.items():
+                    assert isinstance(k, str), f"skip_axes_inds keys must be strings but got: {type(k)}"
+                    assert isinstance(v, list), f"skip_axes_inds values must be lists but got: {type(v)}"
+                    # assert all(isinstance(i, int) for i in v), f"skip_axes_inds values must be lists of integers but got: {v}"
+                    self.skip_axes_inds[k] = [int(i) for i in v]
+                print(f"got skip_axes_inds: {self.skip_axes_inds}")
+                    
+            except Exception as e:
+                print(f"error:{e}\nskip_axes_inds: {self.skip_axes_inds}")
+            
         
         # potentially set by individual models
         self.default_reduce_fxn = default_reduce_fxn or uip.mip        
@@ -299,9 +317,16 @@ class SegmentationModel(ABC):
         
         Returns:
             np.ndarray: Processed array with the shape defined by `out_dims`.
+        
+        Notes:
+            iter_array_dims is the format of the array being iterated over (after any dimensionality reduction)
+            iter_dims is the dimensions (e.g STC) that are being iterated over to yield chunks that are passed into model
+            iter_axes are the integer indices of the iter_dims
+            iter_indicies are tuples of integers which index along the iter_axes
+            
         """                    
         # determine axes for predicting and generating output
-        result_array = result_array = np.zeros(self.out_shape, dtype=img.dtype)
+        result_array = np.zeros(self.out_shape, dtype=img.dtype)
         if self.debug: print('result_array.shape:', result_array.shape)
         # track when first prediction is generated to set the result_array dtype based on it
         pred_generated = False
@@ -311,22 +336,39 @@ class SegmentationModel(ABC):
         
         # iterate over remaining axes that are not part of model input
         self.iter_shape = tuple(inp_arr.shape[self.iter_array_dims.index(d)] for d in self.iter_dims) # shape of iter_axes
-        self.iter_indicies = np.ndindex(self.iter_shape)
+        self.iter_indicies = np.ndindex(self.iter_shape) # gen yields tuple[int, ...]
+        if self.debug: print(f"skip axes inds: {self.skip_axes_inds}")
         
         for indices in self.iter_indicies: 
             if self.debug: print(f"iter_axes: {self.iter_axes}, iter_dims: {self.iter_dims}, indices: {indices}")
             self.current_indicies = indices
             
+            # handle skipping user defined indicies along a certain axis 
+            # (e.g. skip_axes_inds = {'C':[0, 3]}) would skip the 0th and 3rd channel)
+            # instead of running the pred on this index, fill output array at this index with zeros
+            skip = False
+            for axis in self.iter_dims:
+                if axis in self.skip_axes_inds and self.current_indicies[self.iter_dims.index(axis)] in self.skip_axes_inds[axis]:
+                    skip = True
+                    if self.debug: print(f"skipping index {indices} along axis {axis}")
+                    break
+                
             in_slice_index = uip.index_along_axes(inp_arr, self.iter_axes, indices, return_indexer=True)
             input_slice = inp_arr[in_slice_index]
             
-            pred = self.predict(input_slice, **self.predict_kwargs)
-            if pred_generated is False:
-                result_array = result_array.astype(pred.dtype.name)
+            if skip:
+                pred = np.zeros(input_slice.shape, dtype=result_array.dtype)
+            else:
+                pred = self.predict(input_slice, **self.predict_kwargs)
+                
+                # set result array type if this is the first prediction
+                if pred_generated is False:
+                    result_array = result_array.astype(pred.dtype.name)
+                pred_generated = True
             
             out_slice_index = uip.index_along_axes(result_array, self.iter_axes, indices, return_indexer=True)
             result_array[out_slice_index] = pred
-            pred_generated = True
+            
         
         if self.expand_result:
             result_array = uip.transform_axes(result_array, current_format=self.out_dims_pipe, target_format=self.in_dims_pipe)

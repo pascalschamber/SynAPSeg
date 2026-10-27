@@ -31,6 +31,11 @@ predict_kwargs:
     widget_type: bool
     tooltip: set to True to run 3D segmentation on 3D/4D image input. Defaults to False.
     group: predict_kwargs
+  z_axis:
+    default_value: null
+    widget_type: int
+    tooltip: z_axis must be specified for 3D images of ndim=3 or 4D images of ndim=4
+    group: predict_kwargs
   flow_threshold: 
     default_value: 0.4
     widget_type: float

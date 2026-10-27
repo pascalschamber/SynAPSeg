@@ -57,25 +57,24 @@ class MenuBar(QMenuBar):
         doc_action = QAction("Documentation Website", self)
         doc_action.triggered.connect(self.get_callback('documentation'))
         help_menu.addAction(doc_action)
+
+        check_updates_action = QAction("Check for Updates...", self)
+        check_updates_action.triggered.connect(self.get_callback('check_updates'))
+        help_menu.addAction(check_updates_action)
         
         download_models_action = QAction("Download Models", self)
         download_models_dialog = download_models_action.triggered.connect(self.download_models_window)
         help_menu.addAction(download_models_action)
 
-        reset_action = QAction("Reset", self)
-        reset_action.triggered.connect(self.get_callback('reset'))
-        help_menu.addAction(reset_action)
+        restart_app_action = QAction("Restart Application", self)
+        restart_app_action.triggered.connect(self.get_callback('restart_app'))
+        help_menu.addAction(restart_app_action)
 
     
     def download_models_window(self):
         self.download_models_dialog = self.get_callback('download_models')()
         self.download_models_dialog.exec()
         
-              
-    def reset_warning(self):
-        reset_callback = self.callbacks.get('reset')
-        if reset_callback:
-            reset_callback()
 
 
 def show_settings_dialog(parent=None):

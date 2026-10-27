@@ -67,7 +67,19 @@ USE_EXISTING:
   widget_type: bool
   tooltip: "Indicates to skip reading from source and use existing project for all data "
   heading: Run Configuration
-  flags: ["hidden"]
+  # flags: ["hidden"]
+GENERATE_MIP:
+  default_value: True
+  widget_type: bool
+  tooltip: create a maximum intensity z-projection of the input image and save to example's directory
+  heading: Run Configuration
+  # flags: ["advanced"]
+GENERATE_SUMMARY:
+  default_value: True
+  widget_type: bool
+  tooltip: create a summary image which displays the segmenation results overlayed on the input image channels and save to examples' directory
+  heading: Run Configuration
+  # flags: ["advanced"]
 VALIDATE_IMAGE_FILENAME_ORDER:
   default_value: True
   widget_type: bool

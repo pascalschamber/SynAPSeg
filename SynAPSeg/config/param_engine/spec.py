@@ -74,6 +74,9 @@ class ParamSpec:
 
     def is_data_param(self) -> bool:
         return ParameterFlag.DATA_PARAM in self.flags
+
+    def is_advanced(self) -> bool:
+        return ParameterFlag.ADVANCED in self.flags
     
     def set_value(self, value):
         self.current_value = value

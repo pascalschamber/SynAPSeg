@@ -10,7 +10,7 @@ from PyQt6.QtCore import Qt
 import sys
 import os
 import yaml
-from typing import Dict
+from typing import Dict, Optional
 import rich
 
 from SynAPSeg.UI.widgets.config_widget import ParamConfigWidget
@@ -42,16 +42,20 @@ class BaseApp(QWidget):
         # misc attributes
         self.debug = False # enable detailed process info
 
+    def get_app_name(self) -> str:
+        if hasattr(self, 'app_name'):
+            return self.app_name
+        return ''
         
     def init_layout(self):
         """ base class defined layout before child class implements custom layout """
         pass
     
-    def post_layout(self):
+    def post_layout(self, run_button_label: Optional[str]=None):
         """ base class defined layout after child class implements custom layout """
 
         # Button to run app
-        self.run_button = QPushButton(f"Run {self.app_name}")
+        self.run_button = QPushButton(run_button_label if run_button_label is not None else f"Run {self.app_name}")
         self.run_button.clicked.connect(self.run)
         self.layout.addWidget(self.run_button)
         
@@ -212,6 +216,9 @@ class BaseApp(QWidget):
     def config_is_built(self): 
         self._has_built_config = True
         self.update_interp()
+        
+        try: self.printr(self.get_built_config())
+        except: pass
         
 
     def update_interp(self):

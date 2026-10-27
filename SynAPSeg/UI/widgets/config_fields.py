@@ -626,7 +626,7 @@ class DictIntStrField(BaseConfigField):
             self.add_row(k, v)
 
 class DictAnyListField(BaseConfigField):
-    """Widget for dict[str, list] where list is entered as comma-separated values."""
+    """Widget for dict[str, list] where list is entered as comma-separated values and elements are returned as strings."""
     def __init__(self, default_value=None, key_type='str', **kwargs):
 
         super().__init__(default_value=default_value or {}, **kwargs)
@@ -637,7 +637,7 @@ class DictAnyListField(BaseConfigField):
         self.layout.addWidget(self.add_btn)
         self.rows_layout = QVBoxLayout()
         self.layout.addLayout(self.rows_layout)
-        self.key_type = key_type
+        self.key_type = eval(key_type)
         self.set_widget(container)
         self.set_value(self.default_value)
 
@@ -647,7 +647,7 @@ class DictAnyListField(BaseConfigField):
         l.setContentsMargins(0, 0, 0, 0)
         k_inp = QLineEdit(str(k))
         v_inp = QLineEdit(", ".join(map(str, v)) if v else "")
-        v_inp.setPlaceholderText("e.g. 1, 2, 3")
+        v_inp.setPlaceholderText("e.g. 0, 1, ...")
         del_btn = QPushButton("✕")
         del_btn.setFixedSize(20, 20)
         del_btn.clicked.connect(lambda: (self.rows_layout.removeWidget(row), row.deleteLater(), self.value_changed.emit()))
@@ -666,10 +666,16 @@ class DictAnyListField(BaseConfigField):
             w = self.rows_layout.itemAt(i).widget()
             if w:
                 inputs = w.findChildren(QLineEdit)
-                k = eval(f"{self.key_type}({inputs[0].text()})")
+                k = self.key_type(inputs[0].text())
 
                 v_text = inputs[1].text()
                 res[k] = [x.strip() for x in v_text.split(",") if x.strip()]
+                # parse element types, if possible, else keep as str
+                for i,el in enumerate(res[k]):
+                    try:
+                        res[k][i]=eval(el)
+                    except:
+                        pass
         return res
 
     def set_value(self, value):

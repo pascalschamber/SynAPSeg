@@ -2,9 +2,30 @@
 COLOCALIZATIONS:
   default_value: []
   widget_type: list_list_int
-  tooltip: List[list[int, ...]] - channels to colocalize e.g. [[0,1], [1,0]]
+  tooltip: |
+    Channels to colocalize, entered as comma seperated integers (e.g. 0, 1). 
+    Colocalization can be performed between any number of channels.
+    Note that order matters (0,1 is different from 1,0), as described in the example below.
+
+    example:
+      For a three channel image, channel 0 will be assigned colocal_id 0, channel 1 will be assigned colocal_id 1, and channel 2 will be assigned colocal_id 2.
+      These are considered the `base ids` from which colocalization is performed.
+      To colocalize objects in channel 0 and channel 1, we can enter `0,1`. 
+      This means that channel 0 detections and channel 1 detections will be compared
+      and if they are colocalized, they will be assigned a new colocal_id, in this case colocal_id 3, since that is the first available colocal_id.
+
+      Order matters. By convention, the last id in the list is taken to be the `parent id` and all others are considered `intersecting ids`. 
+      Region properties (area, mean intensity, ...) are inheritied from the parent id. 
+      For instance, given entry `0,1`, if object 278 in channel 1 is colocalized with object 63 in channel 0, the colocalized object will have the same area as object 278. 
+      The area of object 63 will be noted in the output table as well, in the column 'clc0_area'.
+
+      Each object can only be colocalized with one object from any single intersecting channel. 
+      This means that if an object is colocalized with multiple objects in another chanel, 
+      only the intersecting object with the highest overlap is chosen to form the colocalized object. 
+      However Colocalizations can still be formed between more than two objects as long as they are in different channels (e.g. colocalization of channels 0,1,2).
   
 COLOC_INTERSECTION_THRESHOLD:
+  display_name: IOU threshold
   default_value: 0.00
   widget_type: float
   tooltip: |
@@ -17,9 +38,9 @@ SEPARATE_COLOCALIZATIONS:
   default_value: True
   widget_type: bool
   tooltip: |
-    If true, remove uncolocalized, non-unique detections 
+    If true, detections that are colocalized do not appear in their base channel's uncolocalized detections 
       For instance, if detections from coloc of channels [0,1] are assigned as colocal_id 2,
-      remove detections from clc0 and clc1 found within clc2 detections - 
-      i.e. only keep the detections from clc0 and clc1 that are not within clc2 detections and
-      thus clc0 and clc1 will represent purely non-colocalized detections
+      This setting removes detections from colocal_id 1 (the parent id) that are found with colocal_id 2 detections - 
+      i.e. only keep the detections from colocal_id 1 that are not within colocal_id 2 detections and
+      thus colocal_id 1 will represent purely non-colocalized detections.
   

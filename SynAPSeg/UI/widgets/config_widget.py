@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (
     QScrollArea,
     QVBoxLayout,
     QTabWidget,
+    QCheckBox,
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 
@@ -20,12 +21,35 @@ from SynAPSeg.UI.widgets.container_widgets import ScrollableContainerWidget, Col
 from SynAPSeg.UI.widgets.config_fields import field_widget
 from SynAPSeg.UI.widgets.dialogs import warning_dialog
 from SynAPSeg.UI.widgets.label import HoverLabel
+from SynAPSeg.config.param_engine.flags import ParameterFlag
 from SynAPSeg.config.param_engine.interpreter import SchemaInterpreter
 from SynAPSeg.utils import utils_general as ug
 
 # -----------------------------------------------------------------------------
 # Helper Functions
 # -----------------------------------------------------------------------------
+
+def is_advanced_spec(spec: dict) -> bool:
+    """Check if a parameter specification has the 'advanced' flag."""
+    flags = spec.get('flags')
+    if not flags and 'extra' in spec and isinstance(spec['extra'], dict):
+        flags = spec['extra'].get('flags')
+    if not flags:
+        return False
+    if isinstance(flags, str):
+        return flags.strip().lower() == 'advanced'
+    if isinstance(flags, (list, tuple, set)):
+        for f in flags:
+            if f is None:
+                continue
+            if isinstance(f, ParameterFlag):
+                if f == ParameterFlag.ADVANCED:
+                    return True
+            elif str(f).strip().lower() == 'advanced':
+                return True
+    if isinstance(flags, ParameterFlag):
+        return flags == ParameterFlag.ADVANCED
+    return False
 
 def format_widget_value(value):
     """
@@ -71,6 +95,10 @@ def create_widget_from_spec(spec, on_change_callback=None):
         
     return widget
 
+def printr(*args, **kwargs):
+    """ rich print dict """
+    import rich
+    rich.print(*args, **kwargs)
 
 # -----------------------------------------------------------------------------
 # Component Widgets
@@ -91,10 +119,13 @@ class StaticParamsGroup(QWidget):
         """
         super().__init__()
         self.group_name = group_name
+        self.specs = specs
         self.layout = QFormLayout()
         self.layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.FieldsStayAtSizeHint)
         self.layout.setFormAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         self.setLayout(self.layout)
+        
+        self.rows = []
         
         # Sort specs? Usually they come ordered or dict preserves insertion order in modern Py.
         for scope, spec in specs.items():
@@ -105,13 +136,25 @@ class StaticParamsGroup(QWidget):
             
             # Add to layout if visual
             if hasattr(widget, 'get_widget'):
-                self.layout.addRow(
-                    HoverLabel(
-                        spec.get("display_name", spec.get("name", "<undefined name>")),
-                        spec.get("tooltip"),
-                    ),
-                    widget.get_widget(),
+                label = HoverLabel(
+                    spec.get("display_name", spec.get("name", "<undefined name>")),
+                    spec.get("tooltip") or "",
                 )
+                field = widget.get_widget()
+                self.layout.addRow(label, field)
+                self.rows.append({
+                    'scope': scope,
+                    'label': label,
+                    'field': field,
+                    'is_advanced': is_advanced_spec(spec),
+                })
+
+    def set_advanced_visible(self, visible: bool):
+        """Toggle visibility of advanced parameters."""
+        for row in self.rows:
+            if row['is_advanced']:
+                row['label'].setVisible(visible)
+                row['field'].setVisible(visible)
 
 
 class AddModelWidget(QWidget):
@@ -171,6 +214,9 @@ class PluginManagerWidget(QWidget):
         self.on_change_callback = on_change_callback
         self.debug = debug
 
+        self.show_advanced = False
+        self.active_models_rows = {} # {model_name: [{'scope': ..., 'label': ..., 'field': ..., 'heading_str': ..., 'is_advanced': ...}]}
+        self.active_models_headings = {} # {model_name: {heading_str: QLabel}}
         self.plugin_specs = {} # Stores specs for active plugins {scope: spec}
         self.active_models_widgets = {} # {model_name: {scope: widget}}
         self.collapsible_container = None
@@ -230,6 +276,8 @@ class PluginManagerWidget(QWidget):
         # Re-init state
         self.plugin_specs = full_plugin_specs
         self.active_models_widgets = {}
+        self.active_models_rows = {}
+        self.active_models_headings = {}
 
         # Identify models
         model_names = self._get_model_names_from_specs(full_plugin_specs)
@@ -247,9 +295,10 @@ class PluginManagerWidget(QWidget):
         param_form = QFormLayout()
         param_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.FieldsStayAtSizeHint)
         param_form.setFormAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
-        headings_added = set()
+        headings_added = {}
 
         model_widgets = {}
+        model_rows = []
 
         for scope, spec in model_specs.items():
             # Create widget
@@ -264,20 +313,31 @@ class PluginManagerWidget(QWidget):
                 # Add heading if needed
                 heading_str = spec.get('group') or spec.get('heading')
                 if heading_str and heading_str not in headings_added:
-                    headings_added.add(heading_str)
                     hl = QLabel(f"{heading_str}")
                     hl.setStyleSheet("font-weight: bold; margin-top: 12px;")
                     param_form.addRow(hl)
+                    headings_added[heading_str] = hl
 
-                param_form.addRow(
-                    HoverLabel(
-                        spec.get("display_name", spec.get("name", "<undefined name>")),
-                        spec.get("tooltip"),
-                    ),
-                    widget.get_widget(),
+                label = HoverLabel(
+                    spec.get("display_name", spec.get("name", "<undefined name>")),
+                    spec.get("tooltip") or "",
                 )
+                field = widget.get_widget()
+                param_form.addRow(label, field)
+                model_rows.append({
+                    'scope': scope,
+                    'label': label,
+                    'field': field,
+                    'heading_str': heading_str,
+                    'is_advanced': is_advanced_spec(spec),
+                })
 
         self.active_models_widgets[model_name] = model_widgets
+        self.active_models_rows[model_name] = model_rows
+        self.active_models_headings[model_name] = headings_added
+
+        # Apply current advanced visibility
+        self._apply_advanced_visible_to_model(model_name, self.show_advanced)
 
         # Create Collapsible
         container_widget = QWidget()
@@ -295,6 +355,30 @@ class PluginManagerWidget(QWidget):
         layout = self.collapsible_container.scroll_content.layout()
         idx = layout.count() - 1 # Insert before last (Adder)
         layout.insertWidget(idx, collapsible)
+
+    def _apply_advanced_visible_to_model(self, model_name, visible: bool):
+        rows = self.active_models_rows.get(model_name, [])
+        headings = self.active_models_headings.get(model_name, {})
+
+        visible_headings = set()
+        for row in rows:
+            if row['is_advanced']:
+                row['label'].setVisible(visible)
+                row['field'].setVisible(visible)
+                if visible and row['heading_str']:
+                    visible_headings.add(row['heading_str'])
+            else:
+                if row['heading_str']:
+                    visible_headings.add(row['heading_str'])
+
+        for heading_str, heading_label in headings.items():
+            heading_label.setVisible(heading_str in visible_headings)
+
+    def set_advanced_visible(self, visible: bool):
+        """Toggle visibility of advanced parameters across all model plugins."""
+        self.show_advanced = visible
+        for model_name in self.active_models_rows:
+            self._apply_advanced_visible_to_model(model_name, visible)
 
     def add_model(self, model_class, model_name):
         """Callback for Add Button"""
@@ -365,6 +449,10 @@ class PluginManagerWidget(QWidget):
                     print(f"! scope not found in plugin_specs: {scope}")
 
             del self.active_models_widgets[model_name]
+        if model_name in self.active_models_rows:
+            del self.active_models_rows[model_name]
+        if model_name in self.active_models_headings:
+            del self.active_models_headings[model_name]
 
         print('active_models_widgets')
         pprint(self.active_models_widgets.keys())
@@ -432,6 +520,8 @@ class ParamConfigWidget(QWidget):
         self.plugin_headings = list(plugin_param_map.keys())
         
         # State
+        self.show_advanced = False
+        self.static_groups = {} # {category: StaticParamsGroup}
         self.widget_registry = {} # Global map of {scope: widget_instance}
         self.config_data = {} # Last built config
         self.plugin_widgets_managers = {} # {Heading: PluginManagerWidget}
@@ -446,6 +536,16 @@ class ParamConfigWidget(QWidget):
     def _init_layout(self):
         layout = QVBoxLayout()
         
+        # Mode Toggle (Basic vs Advanced settings)
+        mode_layout = QHBoxLayout()
+        self.settings_mode_cb = QCheckBox("Basic settings")
+        self.settings_mode_cb.setChecked(False)
+        self.settings_mode_cb.setToolTip("Currently in Basic mode. Check to show Advanced settings.")
+        self.settings_mode_cb.stateChanged.connect(self._on_settings_mode_toggled)
+        mode_layout.addWidget(self.settings_mode_cb)
+        mode_layout.addStretch()
+        layout.addLayout(mode_layout)
+
         # Tabs
         self.tab_widget = QTabWidget()
         self.tab_widget.setObjectName("ConfigTabs")
@@ -460,6 +560,36 @@ class ParamConfigWidget(QWidget):
         layout.addWidget(self.build_button)
         
         self.setLayout(layout)
+
+    def _on_settings_mode_toggled(self, state=None):
+        """Handle toggling between Basic settings and Advanced settings."""
+        is_advanced = self.settings_mode_cb.isChecked()
+        self.settings_mode_cb.setText("Advanced settings" if is_advanced else "Basic settings")
+        self.settings_mode_cb.setToolTip(
+            "Currently in Advanced mode. Uncheck to show Basic settings."
+            if is_advanced
+            else "Currently in Basic mode. Check to show Advanced settings."
+        )
+        self.set_advanced_visible(is_advanced)
+
+    def set_advanced_visible(self, visible: bool):
+        """Toggle visibility of advanced parameters across all tabs."""
+        self.show_advanced = visible
+        if self.settings_mode_cb.isChecked() != visible:
+            self.settings_mode_cb.blockSignals(True)
+            self.settings_mode_cb.setChecked(visible)
+            self.settings_mode_cb.setText("Advanced settings" if visible else "Basic settings")
+            self.settings_mode_cb.setToolTip(
+                "Currently in Advanced mode. Uncheck to show Basic settings."
+                if visible
+                else "Currently in Basic mode. Check to show Advanced settings."
+            )
+            self.settings_mode_cb.blockSignals(False)
+
+        for group in self.static_groups.values():
+            group.set_advanced_visible(visible)
+        for mgr in self.plugin_widgets_managers.values():
+            mgr.set_advanced_visible(visible)
 
     def _on_field_changed(self):
         """Slot for when any field changes."""
@@ -504,6 +634,9 @@ class ParamConfigWidget(QWidget):
         # 3. Handle Plugin Tabs
         for heading in self.plugin_headings:
             self._handle_plugin_category(heading, plugin_specs[heading])
+
+        # 4. Apply advanced visibility state across all tabs
+        self.set_advanced_visible(self.show_advanced)
             
             
     def _handle_static_category(self, category, specs):
@@ -522,6 +655,8 @@ class ParamConfigWidget(QWidget):
             
             # Create Group Widget
             group = StaticParamsGroup(category, specs, self.widget_registry, self._on_field_changed)
+            group.set_advanced_visible(self.show_advanced)
+            self.static_groups[category] = group
             
             # Wrap in Scroll Area
             scroll = QScrollArea()
@@ -552,6 +687,7 @@ class ParamConfigWidget(QWidget):
                 on_change_callback=self._on_field_changed,
                 debug=self.debug
             )
+            manager.set_advanced_visible(self.show_advanced)
             self.plugin_widgets_managers[heading] = manager
             
             # Add to Tab
@@ -563,9 +699,12 @@ class ParamConfigWidget(QWidget):
         else:
             # Just update specs (rebuilds internal list)
             self.plugin_widgets_managers[heading].update_from_specs(specs)
+            self.plugin_widgets_managers[heading].set_advanced_visible(self.show_advanced)
 
 
     def _remove_tab_by_name(self, name):
+        if name in self.static_groups:
+            del self.static_groups[name]
         for i in range(self.tab_widget.count()):
             if self.tab_widget.tabText(i) == name:
                 self.tab_widget.removeTab(i)
@@ -633,7 +772,7 @@ class ParamConfigWidget(QWidget):
             debug_str += f"{scope}: {val}\n"
 
         if self.debug:
-            print(f"build_config:\n{debug_str}")
+            printr(f"build_config:\n{debug_str}")
             
         self.config_data = config
         
@@ -642,3 +781,5 @@ class ParamConfigWidget(QWidget):
         self.build_button.setText("Configuration Built ✅")
         
         self.built_config.emit()
+        
+        print('config built successfully.')
