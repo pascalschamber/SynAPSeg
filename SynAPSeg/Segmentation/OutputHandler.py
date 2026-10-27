@@ -191,16 +191,12 @@ def generate_image_grid(display_images, pipeline, SEG_RESULTS_PATH, RUN_CONFIG, 
         disp_img_i += 1
 
         if image_name == 'raw':
-            # also grab composite image of the raw image to create thumbnail
+            # also grab composite raw image to create thumbnail
             # resize so largest dim is <= 512  
-            
             scale_factor = max(np.array(comp_img.shape[:-1])/512)
             target_shape = np.array(comp_img.shape[:-1])/scale_factor
-            resized = uip.resize_by_format(comp_img, 'YXC', tuple(target_shape.astype('int')))
-            thumbnail_img = (resized * 255).astype('uint8')
-            
-            # thumbnail_img = skimage.transform.resize(comp_img, output_shape=(512,512,3), anti_aliasing=True, preserve_range=True).astype('uint8')
-            
+            thumbnail_img = uip.resize_by_format(comp_img, 'YXC', tuple(target_shape.astype('int')))
+                        
     # plot the grid    
     up.plot_image_grid(
         disp_img_list, titles=grid_titles.flatten(), n_cols=C, n_rows=R,
@@ -263,8 +259,7 @@ def save_images_and_metadata(ex_md, arr, predictions, mip_thumbnail=None, output
     
     # write images      
     out_names = list(predictions.keys()) + ['raw_img']
-    # ug.merge_dicts({'raw_img': arr}, predictions).items()
-    
+        
     for output_base_name in out_names:
         _ISRAW = (output_base_name == 'raw_img') # flag for processing the raw image
         outarr = arr if _ISRAW else predictions[output_base_name]
@@ -290,7 +285,9 @@ def save_images_and_metadata(ex_md, arr, predictions, mip_thumbnail=None, output
             output_name = f"{is_pred}{output_base_name}{i_list}"
             
             if squeeze:
+                debug_str = f"collapsed singleton dims for {output_name}\n\tfrom shape:{subarr.shape}, format: {_STANDARD_FORMAT}"
                 subarr, _fmt = uip.collapse_singleton_dims(subarr, _STANDARD_FORMAT)
+                print(debug_str + f"\n\tnew shape: {subarr.shape}, new format: {_fmt}")
                 write_array(subarr, output_dir, output_name, _fmt, ex_md, OUTPUT_IMAGE_PYRAMID=(OUTPUT_IMAGE_PYRAMID and _ISRAW))
             else:
                 write_array(subarr, output_dir, output_name, _STANDARD_FORMAT, ex_md, OUTPUT_IMAGE_PYRAMID=(OUTPUT_IMAGE_PYRAMID and _ISRAW))
@@ -324,21 +321,3 @@ def predictions_to_display_format(pipeline, predictions):
         # display first output only
         formatted[model_name] = to_display_format(predictions[model_name][0], model.get_output_dims())
     return formatted
-
-
-def show_pipeline_results(predictions, pipeline):
-    """ coerce predicition results to a standardized format ('CZYX') so they can be further reduced and displayed as 2d images"""
-    for name, result in predictions.items():
-        dims = pipeline.get_model(name).get_output_dims()
-        display_array = uip.transform_axes(result[0], dims, _STANDARD_FORMAT)   
-        display_array = uip.reduce_dimensions(display_array, current_format=_STANDARD_FORMAT, take_dims='ST')       
-        uip.pai(display_array)
-        up.show_ch(display_array, axis=0)
-
-
-def show_sd_results(chs, x1,x2,y1,y2, label_seg_input, sd_predictions, arr_mip):
-    for i in chs:
-        up.show(label_seg_input[0, x1:x2, y1:y2, i]) 
-        up.show(sd_predictions[i][x1:x2, y1:y2])
-        up.show(up.overlay_colored_outlines(sd_predictions[i][x1:x2, y1:y2], label_seg_input[0, x1:x2, y1:y2, i], 0.5))
-        up.show(up.overlay_colored_outlines(sd_predictions[i][x1:x2, y1:y2], uip.norm_percentile(arr_mip[i, x1:x2, y1:y2], (1,99.8), None), 0.5))
