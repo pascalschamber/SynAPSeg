@@ -25,9 +25,10 @@ def build_query(**col_values):
         A string expression suitable for `DataFrame.query`, combining conditions with '&'.
     """
     terms: list[str] = []
-    q_val = lambda v: f"'{v}'" if isinstance(v, str) else f"{v}"
+    q_val = lambda v: v if isinstance(v,list) else f"'{v}'" if isinstance(v, str) else f"{v}"
+    op = lambda v: f'.isin({v})' if isinstance(v, list) else f' == {v}'
     for col, val in col_values.items():
-        terms.append(f"({col} == {q_val(val)})")
+        terms.append(f"({col}{op(q_val(val))})")
     return " & ".join(terms)
 
 

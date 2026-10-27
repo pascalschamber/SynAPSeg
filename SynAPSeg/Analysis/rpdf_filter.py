@@ -5,8 +5,8 @@ import pandas as pd
 import re
 import os
 import sys
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))) # add parent dir to sys.path
-from utils import utils_general as ug
+
+from SynAPSeg.utils import utils_general as ug
 
 def filter_rpdf(
     threshold_dict,
@@ -288,11 +288,9 @@ def format_threshold_dict(threshold_dict, all_colocal_ids):
             }
     """
     ftd = {} # formatted threshold dict
-    clc_ids = [str(cid) for cid in all_colocal_ids] # convert to strings
-    threshold_dict = {str(k):v for k,v in threshold_dict.items()} # format all keys as strings
     
     # separate global from clc_id specifc threshold props, assume if key is not in clc_ids it is a global threshold
-    global_props = [k for k in threshold_dict if k not in clc_ids]
+    global_props = [k for k in threshold_dict if k not in all_colocal_ids]
     clc_threshes = [k for k in threshold_dict if k not in global_props] # list of clc ids that are manually specified
     
     if not global_props:
@@ -300,7 +298,7 @@ def format_threshold_dict(threshold_dict, all_colocal_ids):
     
     # first set all global props
     for prop in global_props:
-        for cid in clc_ids:
+        for cid in all_colocal_ids:
             if cid not in ftd:
                 ftd[cid] = {}
             val_range = threshold_dict[prop]
@@ -312,8 +310,6 @@ def format_threshold_dict(threshold_dict, all_colocal_ids):
         for prop, val_range in clc_props.items():
             ftd[clc_id][prop] = val_range
     
-    # change all keys to ints
-    ftd = {int(k):v for k,v in ftd.items()}
     return ftd
 
 

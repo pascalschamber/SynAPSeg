@@ -393,7 +393,7 @@ denddf.to_csv(
         f"dendrite_aggregated_data_{ug.get_datetime()}.csv")
     ))
 
-from df_utils import query_df
+from SynAPSeg.Analysis.df_utils import query_df
 # basic plots
 ####################################################################################################
 get_rois = [1,2]
