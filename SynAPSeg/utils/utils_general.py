@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import List, Pattern, Union, Dict, Optional, Iterable
+from typing import List, Pattern, Union, Dict, Optional, Iterable, Literal
 import os
 from pathlib import Path
 import re
@@ -89,7 +89,7 @@ def get_matches(iterable: Iterable, filter_str: list|str, pattern=True, startswi
     matches = sorted([s for s in iterable if any(match_func(s, f) for f in filters)])
     return matches
 
-def get_contents(adir, filter_str='', startswith=False, endswith=True, filetype=None, fail_on_empty=True, pattern=False, warn=True) -> List[str]:
+def get_contents(adir, filter_str='', startswith=False, endswith=True, filetype=None, fail_on_empty=True, pattern=False, warn=True, assert_length=None) -> List[str]:
     """
     Gets elements from directory content that match the string, or if filter_str is a list, checks if any string in the list matches. 
         Wraps different ways to do matching.
@@ -105,8 +105,9 @@ def get_contents(adir, filter_str='', startswith=False, endswith=True, filetype=
             If both endswith and starts with are False, the filter strings will be matched anywhere within the input strings 
                 using the `in` operator.
         filetype (None, str): string to match to end of filename after other matching is applied
-        fail_on_empty (bool): if True will raise error if no matches are found
+        fail_on_empty (bool): if True will raise ValueError if no matches are found
         pattern: (bool): if True, filter_str applied using re.search
+        assert_length: (None, int): if not None, will raise FileExistsError if the number of matches is not equal to assert_length
     Returns:
         list[str]: sorted list containing the filtered strings.
     """
@@ -126,6 +127,11 @@ def get_contents(adir, filter_str='', startswith=False, endswith=True, filetype=
     # re-build paths
     filtered_paths = [os.path.join(adir, el) for el in matches]
     
+    # handle assertions
+    if assert_length is not None:
+        if len(filtered_paths) != assert_length:
+            raise FileExistsError(f'expected {assert_length} matches, got {len(filtered_paths)} for {adir} using filters {filter_str}')
+    
     # handle empty dirs
     if len(filtered_paths) == 0:
         msg = f'no content found for {adir} using filters {filter_str}\ncurrent content:\n{content}'
@@ -136,6 +142,8 @@ def get_contents(adir, filter_str='', startswith=False, endswith=True, filetype=
                 print(msg)
         
     return filtered_paths
+
+
 
 def get_contents_recursive(directory, filetype='', pattern=None, file_list=None):
     """
@@ -697,6 +705,13 @@ def get_key_from_value(data_dict: dict, target_value: str) -> Optional[str]:
     # If the loop finishes without finding a match, return None
     return None
 
+def get_first_value(d:dict, keys:list):
+    """ return the first value in the dictionary corresponding to a list of keys"""
+    for k in keys:
+        if k in d:
+            return d[k]
+    raise IndexError("Could not find any value corresponding to keys: {}. Available keys: {}".format(keys, list(d.keys())))
+    
 def any_isin(el_to_check, strs_to_look_for):
     """ returns true if any one of the strs_to_look_for are in el_to_check"""
     for astr in strs_to_look_for:
@@ -786,6 +801,50 @@ def dt(f=None, *args, **kwargs):
         elapsed = end - start
         return elapsed, result
 
+class Timer:
+    """
+    Convience class for simple function timing.
+
+    Usage:
+        t = Timer() # timer is running        
+        ... # code you want to time
+        print(t())    # stop and print elapsed time
+    """
+    def __init__(self, start=True, mode: Literal['splits', 'cumulative', 'toggle']='splits'):
+        self.mode = mode
+        self.running=False
+        self.start_time = None
+        self.logged_events = []
+        if start: self.start()
+    def start(self):
+        self.running=True
+        self.start_time = dt()
+    def stop(self):
+        elapsed = dt() - self.start_time
+        if self.mode == 'toggle': self.running=False
+        elif self.mode == 'splits': self.start()            
+        elif self.mode == 'cumulative': pass
+        return elapsed
+    def __call__(self, label:Optional[str]=None):
+        if not self.running:
+            self.start()
+        else:
+            elapsed = self.stop()
+            if label is not None:
+                self.logged_events.append((label, elapsed))
+            return elapsed
+    def __str__(self):
+        astr = [f"{label}: {elapsed}" for label, elapsed in self.logged_events]
+        return '\n'.join(astr)
+    
+    def total(self):        
+        return sum([elapsed for label, elapsed in self.logged_events])
+    
+    def reset(self):
+        self.logged_events = []
+        
+    
+        
 
 def get_function(function_string: str):
     """

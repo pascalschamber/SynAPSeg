@@ -11,7 +11,7 @@ import numpy as np
 from SynAPSeg.utils import utils_general as ug
 
 
-def batch_indSamples_test(df, value_cols:list[str], groupby_cols:Optional[list[str]]=None, treatment_col='treatment',  group1=None, group2=None):
+def batch_indSamples_test(df, value_cols:list[str], groupby_cols:Optional[list[str]]=None, treatment_col='treatment',  group1=None, group2=None) -> pd.DataFrame:
     """ 
     unifying interface for batch running t-tests and mwu tests to compare two groups 
 
@@ -25,7 +25,7 @@ def batch_indSamples_test(df, value_cols:list[str], groupby_cols:Optional[list[s
     
     """
         
-    def _run_stats(_df, value_cols:list[str], treatment_col='treatment',  group1=None, group2=None):
+    def _run_stats(_df, value_cols:list[str], treatment_col='treatment',  group1=None, group2=None) -> pd.DataFrame:
         
         results = []
         for fc in value_cols:

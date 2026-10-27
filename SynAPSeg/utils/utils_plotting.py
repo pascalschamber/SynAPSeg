@@ -1,4 +1,4 @@
-from typing import Optional, Tuple, Iterator, Dict, List, Any
+from typing import Optional, Tuple, Iterator, Dict, List, Any, Union
 import numpy as np
 import math
 import os
@@ -369,7 +369,7 @@ def subplots(
     n_imgs: int, 
     n_cols: Optional[int] = None, 
     n_rows: Optional[int] = None, 
-    size_per_dim: float = 4.0,
+    size_per_dim: Union[float, tuple] = 4.0,
     **subplot_kwargs
 ) -> Tuple[plt.Figure, plt.Axes, Iterator[Tuple[int, plt.Axes]]]:
     """
@@ -764,7 +764,7 @@ def show_gif(images, figsize=(12,12), duration=200, loop=0, cmap='gray', hide_ax
     display(IPyImage(data=gif_bytes.read(), format='png'))
 
 
-def show_in_napari(imgs, lbl_img_contours=1):
+def show_in_napari(imgs:list[np.ndarray] | np.ndarray, lbl_img_contours=1):
     """show arrays in napari """
     import napari
     from SynAPSeg.IO.image_parser import ImageParser

@@ -27,8 +27,9 @@ class ImgDB:
 
     """
 
-    def __init__(self, image_channels, colocal_nuclei_info , **kwargs):
+    def __init__(self, image_channels:list[dict], colocal_nuclei_info , **kwargs):
         self.image_channels = image_channels
+        self.base_ids = []
         self.colocal_nuclei_info = colocal_nuclei_info 
         self.colocalid_ch_map = {} # should rename to ch_colocalid_map
         self.colocal_ids = {}
@@ -36,13 +37,22 @@ class ImgDB:
         self.colocalized_ids = [] # colocal ids assigned to one of the colocalizations
         self.ingest_kwargs()
     
-    def ingest_kwargs(self):
-        # get assigned mapping of image channels to colocalids
+    def parse_image_channels(self):
+        self.base_ids = []
         for ch_dict in self.image_channels:
+            
             clc_id = self.check_not_none(ch_dict.get("colocal_id"))
             assert clc_id not in self.colocal_ids, f"colocal_id must be unique, got {clc_id} but have {self.colocal_ids}"
+            
+            # get assigned mapping of image channels to colocalids
             self.colocalid_ch_map[self.check_not_none(ch_dict.get("ch_idx"))] = clc_id
+            
             self.colocal_ids[clc_id] = {k:v for k,v in ch_dict.items() if k!="colocal_id"}
+            self.base_ids.append(clc_id)
+            
+    def ingest_kwargs(self):
+        # get assigned mapping of image channels to colocalids
+        self.parse_image_channels()
         
         # parse colocal nuclei info 
         if self.colocal_nuclei_info is not None:
