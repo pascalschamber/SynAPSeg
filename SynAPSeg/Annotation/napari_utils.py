@@ -82,6 +82,80 @@ def delete_layers(viewer, layers_to_remove):
             del(viewer.layers[ln])
 
 
+
+import pandas as pd
+from napari.layers import Shapes
+
+def export_shapes_to_csv(layer: Shapes, filepath: str | Path) -> pd.DataFrame:
+    """Exports a Napari Shapes layer to a CSV file in Napari's standard long-form
+
+    (per-vertex) format, appending custom feature columns to each row.
+    """
+    ndim = layer.ndim
+    axis_cols = [f"axis-{i}" for i in range(ndim)]
+    base_cols = ["index", "shape-type", "vertex-index"] + axis_cols
+
+    features_df = layer.features if layer.features is not None else pd.DataFrame()
+    feature_cols = list(features_df.columns)
+
+    rows = []
+    for shape_idx, (coords, shape_type) in enumerate(
+        zip(layer.data, layer.shape_type)
+    ):
+        # Extract features for current shape if available
+        feat_dict = (
+            features_df.iloc[shape_idx].to_dict()
+            if shape_idx < len(features_df)
+            else {}
+        )
+
+        for v_idx, vertex in enumerate(coords):
+            row = {
+                "index": shape_idx,
+                "shape-type": shape_type,
+                "vertex-index": v_idx,
+            }
+            # Add axis coordinates (axis-0, axis-1, etc.)
+            for d, val in enumerate(vertex):
+                row[f"axis-{d}"] = val
+
+            # Append shape features (name, type, custom, etc.)
+            row.update(feat_dict)
+            rows.append(row)
+
+    # Construct DataFrame with standard column order
+    all_cols = base_cols + [c for c in feature_cols if c not in base_cols]
+    df = pd.DataFrame(rows, columns=all_cols) if rows else pd.DataFrame(columns=all_cols)
+
+    # Write out to disk
+    out_path = Path(filepath)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(out_path, index=False)
+
+    return df
+
+
+def add_napari_shapes_layer_from_df(df:pd.DataFrame, viewer):
+    """convert napari df format to format  comp. w/ add_shapes"""
+    napari_polys = []
+    dim_cols = sorted([c for c in df.columns if c.startswith('axis-')], reverse=True)
+    for dfn, adf in df.groupby(['index']):
+        napari_polys.append(
+            np.stack([adf[c].to_numpy() for c in dim_cols], -1)
+        )
+
+    layer = viewer.add_shapes(
+        napari_polys,
+        shape_type='polygon',
+        edge_width=1,
+        edge_color='red',
+        face_color_cycle=[np.array([0,0,0,0])],
+        name='to_exclude_areas',
+    )
+    return layer
+
+
+
 def build_filemap(_FILE_MAP, get_contents_fxn, EXAMPLES_BASE_DIR, EXAMPLE_I):
     # pattern match filenames
     FILE_MAP = {k:[] for k in _FILE_MAP}

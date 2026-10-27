@@ -2,7 +2,9 @@ import napari
 from napari.utils.notifications import show_info
 import numpy as np
 import os
+import re
 import sys
+from typing import Pattern, Union
 
 from SynAPSeg.Annotation.napari_utils import get_napari_cmaps
 from SynAPSeg.IO.metadata_handler import MetadataParser
@@ -127,63 +129,38 @@ def custom3d_camera_controls(
         event.handled = True
 
 
-
+def toggle_layer_visibility(viewer, pattern: Union[str, Pattern]):
+    """Toggle layer visibility based on regex pattern matching the layer name."""
+    regex = re.compile(pattern) if isinstance(pattern, str) else pattern
+    for layer in viewer.layers:
+        layer.visible = bool(regex.search(layer.name))
+            
 def add_custom_keybindings(viewer):
     # add custom key bindings
     ####################################
-
     # custom3d_camera_controls(viewer)
-
-    def isin(elem, alist):
-        for el in alist:
-            if el == elem:
-                return True
-        return False
-    def show_pred_ch(viewer, chs):
-        for layer in viewer.layers:
-            if isin(layer.name, chs):
-                layer.visible=True
-            else:
-                layer.visible=False
+    
     @viewer.bind_key('Ctrl-0')
-    def show_all_mip_channels(viewer):
-        show_els = ['mip_n2v_ch', 'mip_raw_ch']
-        show_pred_ch(viewer, [f"{el}0" for el in show_els] + [f"{el}1" for el in show_els] + [f"{el}2" for el in show_els] + [f"{el}3" for el in show_els])
+    def show_ch1(viewer):
+        toggle_layer_visibility(viewer, '.*_ch0.*')
 
     @viewer.bind_key('Ctrl-1')
     def show_ch1(viewer):
-        show_els = ['pred_stardist_ch', 'annotated_pred_stardist_ch', 'mip_n2v_ch', 'mip_raw_ch']
-        show_pred_ch(viewer, [f"{el}0" for el in show_els])
+        toggle_layer_visibility(viewer, '.*_ch1.*')
+
     @viewer.bind_key('Ctrl-2')
     def show_ch2(viewer):
-        show_els = ['pred_stardist_ch', 'annotated_pred_stardist_ch', 'mip_n2v_ch', 'mip_raw_ch']
-        show_pred_ch(viewer, [f"{el}1" for el in show_els])
+        toggle_layer_visibility(viewer, '.*_ch2.*')
+
     @viewer.bind_key('Ctrl-3')
     def show_ch3(viewer):
-        show_els = ['pred_stardist_ch', 'annotated_pred_stardist_ch', 'mip_n2v_ch', 'mip_raw_ch']
-        show_pred_ch(viewer, [f"{el}2" for el in show_els])
-    @viewer.bind_key('Ctrl-4')
-    def show_ch4(viewer):
-        show_els = ['pred_stardist_ch', 'annotated_pred_stardist_ch', 'mip_n2v_ch', 'mip_raw_ch']
-        show_pred_ch(viewer, [f"{el}3" for el in show_els])
-        
-    @viewer.bind_key('Ctrl--')
-    def hide_all_layers(viewer):
+        toggle_layer_visibility(viewer, '.*_ch3.*')
+
+    @viewer.bind_key('Ctrl-`')
+    def toggle_all_layers(viewer):
         for layer in viewer.layers:
-            layer.visible=False
+            layer.visible = not layer.visible
         
-    # key binding for toggleing layer visibility
-    @viewer.bind_key('Ctrl-Alt-H')
-    def toggle_visibility(viewer):
-        """Toggle the visibility of the selected layer"""
-        
-        current_layer = viewer.layers.selection.active
-        if current_layer is not None:
-            # Toggle the visibility of the selected layer
-            current_layer.visible = not current_layer.visible
-        else:
-            show_info("No layer is currently selected.")
-    
     # key binding for facilitating comparing mip and stack for current image layer
     @viewer.bind_key('Ctrl-Alt-G')
     def toggle_compare_stack(viewer):
@@ -252,32 +229,5 @@ def add_custom_keybindings(viewer):
         if switchToLayer is not None:
             current_layer.visible = False
             switchToLayer.visible = True
-            
-    
-    def toggle_layer_visibility(viewer):
-        """
-        Toggles visibility between 'pred_n2v_ch0' and 'raw_img_ch0' layers.
-        If one is visible, it hides it and shows the other.
-        """
-        name1, name2 = "raw_img_ch1", "pred_n2v_ch1"
-        layer1 = viewer.layers[name1] if name1 in viewer.layers else None
-        layer2 = viewer.layers[name2] if name2 in viewer.layers else None
-
-        if layer1 is None or layer2 is None:
-            print("Error: One or both layers not found")
-            return
-
-        if layer1.visible:
-            layer1.visible = False
-            layer2.visible = True
-        else:
-            layer1.visible = True
-            layer2.visible = False
-
-
-    # Register the keybinding
-    @viewer.bind_key("Ctrl-Alt-B")
-    def toggle_layers(viewer):
-        toggle_layer_visibility(viewer)
 
     return viewer

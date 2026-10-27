@@ -3,6 +3,7 @@ from typing import Optional
 import numpy as np
 import os
 import sys
+import pandas as pd
 
 from SynAPSeg.utils import utils_image_processing as uip
 from SynAPSeg.utils import utils_general as ug
@@ -15,7 +16,7 @@ logger = logging.getLogger("SynAPSeg")
 logger.info("annotation_IO started.")
 
 from copy import deepcopy
-from typing import Optional, Dict, List, Tuple
+from typing import Optional, Dict, List, Tuple, Any
 
 def _test():
     project = Project(r"D:\BygraveLab\Confocal data archive\Pascal\SEGMENTATION_DATASETS\VHL_VglutHomer")
@@ -54,7 +55,7 @@ def load_example_images(
     fail_on_format_error: bool = False,
     get_label_int_map: bool = False,
     use_prefix_as_key: bool = True,
-):
+) -> tuple[dict, dict[str, list[str]], dict[str, Any], list[str]]:
     """
     Loads project example data for the annotator viewer.
 
@@ -69,11 +70,13 @@ def load_example_images(
     # 1. Setup Configuration
     # ---------------------------------------------------------
     type_patterns = {
+        'ignore': ['thumbnail.png'],
+        'shapeLayer_ROIs': [r'.*\.csv$', r'.*\.geojson$'], # polygons exported from napari `shapes` layer
         'images': [r'^raw_img', r'^mip_raw'],
         'labels': [r'^pred_'],
         'annotations': [r'^annotated_'],
         'ROIS': [r'^ROI'],
-        'metadata': [r'^metadata\.ya?ml']
+        'metadata': [r'^metadata\.ya?ml', r'.*\.txt$'],
     }
 
     # Merge user-defined patterns
@@ -101,6 +104,10 @@ def load_example_images(
     # ---------------------------------------------------------
     validated_filemap = {k: [] for k in type_patterns}
     
+    # discover exported shapes layers
+    present_shapeLayer_ROIs = ex.discover_napari_shapeLayerROIs()
+    print(present_shapeLayer_ROIs)
+    
     # We work on a copy of metadata to avoid mutating the original object state unexpectedly
     updated_md = deepcopy(ex.exmd)
     data_md = updated_md.setdefault('data_metadata', {})
@@ -117,6 +124,7 @@ def load_example_images(
             if ug.get_matches([fn], patterns, pattern=True):
                 file_type = key
                 break
+        print(f"File {fn} is of type {file_type}")
         
         # Handle unknown files
         if not file_type:
@@ -128,10 +136,30 @@ def load_example_images(
             except Exception:
                 print(f"Skipping unknown file type: {fn}")
                 continue
+        
+        # skip ignored types
+        ####################
+        if file_type in ['ignore', 'metadata']: 
+            print(f"ignoring `{fn}` because of type <{file_type}>")
+            continue
 
-        # B. Get Shape & Format
+        # Get Shape & Format
         file_key = ug.get_prefix(fn)
         file_path = ex.get_path(fn)
+        
+        
+        # napari shapes layer handling
+        ##############################
+        if file_type == 'shapeLayer_ROIs':
+            if fn in present_shapeLayer_ROIs:
+                validated_filemap[file_type].append(fn)
+            else:
+                print(f"Shape layer file {fn} not found in metadata")
+            continue
+                
+        
+        # tiff file handling
+        ####################
         
         # Safely get shape from disk
         try:
@@ -235,7 +263,7 @@ def validate_mapping(arr, input_type, img_name):
     if display_layer_class != std_input_type: # convert to assumed mapping
         print(f"WARNING -- converting img {img_name} from {input_type} --> {display_layer_class} due to dtype constraints. see annotation_IO.validate_mapping for more info about dtype assumptions.")
     return display_layer_class
-        
+
 def standardize_input_types(input_type):
     """ This exists for backcompat. checks input type is supported, convert mips/3D to general `images` type as is now standard """
     if input_type in ['MIPS', '3D']:
@@ -293,20 +321,22 @@ def arr2chlist(arr, current_format: str):
     if c_i == -1:
         return [arr], current_format
     return uip.unpack_array_axis(arr, c_i), current_format.replace("C", "")
-    
 
-def preproc_images_for_display(exmd, FILE_MAP, image_dict, get_image_list: Optional[list[str]]=None, warn=True):
+
+def preproc_images_for_display(
+    exmd, FILE_MAP, image_dict, get_image_list: Optional[list[str]] = None, warn=True
+) -> tuple[dict, dict]:
 
     # handle inputs
     if get_image_list is None:
         get_image_list = ug.flatten_list(list(FILE_MAP.values()))
-    
+
     if 'data_metadata' not in exmd:
         exmd['data_metadata'] = {'data_shapes': {}, 'data_formats': {}}
-    
+
     # get data formats
     shapes, fmts = exmd['data_metadata'].get('data_shapes', {}), exmd['data_metadata'].get('data_formats', {})
-    
+
     display_fmts = []
     # invert FILE_MAP dict so can look up how each image that was found should be handled
     # removed usage of filestem, so filename can now be used
@@ -315,8 +345,9 @@ def preproc_images_for_display(exmd, FILE_MAP, image_dict, get_image_list: Optio
 
     # iter images - load into napari based on criteria defined in FILE_MAP
     images_to_display = []
-    for img_name, arr in image_dict.items():
-        
+    non_array_types_to_display = []
+    for img_name, arr in image_dict.items(): # (filename, dataObject)
+
         if arr is None:
             if warn: print(f'ignoring {img_name} as arr is None')
             continue
@@ -328,59 +359,199 @@ def preproc_images_for_display(exmd, FILE_MAP, image_dict, get_image_list: Optio
         if img_name not in f_get_img_list:
             if warn: print(f'ignoring {img_name} as it is not in get_image_list')
             continue
-        logger.info(f"processing image: {img_name}..")
+
         _load_as = inverted_file_map[img_name]
-        
-        # added support for using filestem or filename to match format
-        input_format = fmts.get(img_name)
-        input_format2 = fmts.get(ug.get_prefix(img_name))
-        any_found = [el for el in [input_format, input_format2] if el is not None]
-        if len(any_found) == 0: 
-            input_format = uip.estimate_format(arr.shape)
-            print(f"WARNING -- could not find format for {img_name} in exmd, estimated format: {input_format} from shape {arr.shape}")
-        else: 
-            input_format = any_found[0]
-        
-        # standardize, then collapse singleton dims
+        logger.info(f"processing image: {img_name} as type <{_load_as}>..")
 
-        arr, current_format = uip.standardize_collapse(arr, input_format, STANDARD_FORMAT)
-        
-        logger.info(f"[{_load_as}], \'{img_name}\', shape: {arr.shape}, format: {current_format}, (input format: {input_format})")
-        # check dtypes
-        load_as = validate_mapping(arr, _load_as, img_name)
-        
-        # explode channels axis (if present), other wise just a 1 elem list
-        arr_ch_list, current_format = arr2chlist(arr, current_format)
-        
-        # img arr normalizing
-        NORMALIZE = False
-        if load_as in ['images'] and NORMALIZE:
-                            
-            logger.info(f"normalizing: {img_name} and converting to 8bit for proper colormap display")
-            arr_ch_list = [
-                (uip.normalize_01(a) * 255).astype('uint8')
-                for a in arr_ch_list
-            ]
+        def get_ROI_export_metadata(exmd, img_name):
 
-        images_to_display.append({
-            'arr_ch_list': arr_ch_list, 'load_as': load_as, 'img_name': ug.get_prefix(img_name), 'current_format': current_format,
-            'filename': img_name # with suffix, img_name here then is after get_prefix
-        })
-        display_fmts.append(current_format)
-    
+            roi_exports = exmd['data_metadata'].get('ROI_exports') or {}
+            if roi_exports:
+                roi_md = roi_exports.get(img_name) or {}
+                return roi_md.get('parent_layer_name')
+
+        from SynAPSeg.Plugins.ABBA import core_regionPoly as rp
+        if isinstance(arr, rp.polyCollection):          
+            shapes_data, features_df = geojsonPoly_to_napari_shapes_data(arr)
+            images_to_display.append({
+                'display_type': 'shapes',
+                'poly_coords': shapes_data,
+                'features': features_df,
+                'shape_type': 'polygon',
+                'ndim': 2, # polycollection only supports 2d polys 
+                'parent_layer_name': get_ROI_export_metadata(exmd, img_name),
+                'load_as': _load_as, 
+                'img_name': ug.get_prefix(img_name), 
+                'filename': img_name,
+                'df': None,
+            })
+
+        elif isinstance(arr, pd.DataFrame):
+
+            # load and process CSV into shapes layer
+            from SynAPSeg.utils import utils_geometry as ugeom
+            poly_coords, features_df = ugeom.parse_shapes_from_dataframe(arr) 
+
+            images_to_display.append({
+                'diplay_type': 'shapes',
+                'poly_coords': poly_coords,
+                'features': features_df,
+                'shape_type': 'polygon',
+                'ndim': poly_coords[0].shape[-1], # assumes all have same shape 
+                'parent_layer_name': get_ROI_export_metadata(exmd, img_name),
+                'load_as': _load_as, 
+                'img_name': ug.get_prefix(img_name), 
+                'filename': img_name,
+                'df': arr,
+            })
+        elif isinstance(arr, np.ndarray):
+            # added support for using filestem or filename to match format
+            input_format = fmts.get(img_name)
+            input_format2 = fmts.get(ug.get_prefix(img_name))
+            any_found = [el for el in [input_format, input_format2] if el is not None]
+            if len(any_found) == 0: 
+                input_format = uip.estimate_format(arr.shape)
+                print(f"WARNING -- could not find format for {img_name} in exmd, estimated format: {input_format} from shape {arr.shape}")
+            else: 
+                input_format = any_found[0]
+
+            # standardize, then collapse singleton dims
+            arr, current_format = uip.standardize_collapse(arr, input_format, STANDARD_FORMAT)
+
+            logger.info(f"[{_load_as}], \'{img_name}\', shape: {arr.shape}, format: {current_format}, (input format: {input_format})")
+            # check dtypes
+            load_as = validate_mapping(arr, _load_as, img_name)
+
+            # explode channels axis (if present), other wise just a 1 elem list
+            arr_ch_list, current_format = arr2chlist(arr, current_format)
+
+            # img arr normalizing
+            NORMALIZE = False
+            if load_as in ['images'] and NORMALIZE:
+
+                logger.info(f"normalizing: {img_name} and converting to 8bit for proper colormap display")
+                arr_ch_list = [
+                    (uip.normalize_01(a) * 255).astype('uint8')
+                    for a in arr_ch_list
+                ]
+
+            images_to_display.append({
+                'display_type': load_as,
+                'arr_ch_list': arr_ch_list, 
+                'load_as': load_as, 
+                'img_name': ug.get_prefix(img_name), 
+                'current_format': current_format,
+                'filename': img_name # with suffix, img_name here then is after get_prefix
+            })
+            display_fmts.append(current_format)
+        else:
+            if warn:
+                print(f"ignoring {img_name} due to incompatible type: {type(arr)}")
+
     # build viewer args based on processed shapes
     viewer_kwargs = {'ndisplay':2, 'order':tuple(), 'axis_labels': []}
-    
+
     disp_dims = set(list("".join(display_fmts))) # get unique display dimensions
     unused_dims = uip.subtract_dimstr(STANDARD_FORMAT, disp_dims) # get un-used dimensions
     disp_fmt = uip.subtract_dimstr(STANDARD_FORMAT, unused_dims) # set axes for viewer based on largest 
     viewer_kwargs['axis_labels'] = [f"<{d}> " for d in (disp_fmt)]
     viewer_kwargs['order'] = list(range(len(disp_fmt))) # e.g. 0,1,2 for ZYX
-    
+
     # now we have to reformat all the arrays to match this format - performance improvement would be don't do arr2chlist until now
     # for imgd in images_to_display:
     #     imgd['arr_ch_list'] = [uip.transform_axes(a, imgd['current_format'], disp_fmt) for a in imgd['arr_ch_list']]
     #     imgd['current_format'] = disp_fmt
-    
-    
+
     return images_to_display, viewer_kwargs
+
+
+def geojsonPoly_get_features_df(polycollection):
+    features = []
+    polyindex_to_napari_index = {} # dict mapping poly index in collection to list of indicies - required by napari where multipolys are split
+    for polyindex, gjp in enumerate(polycollection):
+        props = gjp.properties
+        polyindex_to_napari_index[polyindex] = []
+        if 'napari_shapes_layer_info' in props:
+            napari_md = props['napari_shapes_layer_info']
+            parse_keys = ['name', 'indicies', 'shape_types', 'custom', 'coordinate_system']
+            extracted = {k: napari_md.get(k) for k in parse_keys}
+            # need to separate multi polys into individual rows
+            for i in range(len(extracted['indicies'])):
+                row = {
+                    'name': extracted['name'], 
+                    'index': extracted['indicies'][i],
+                    'type': extracted['shape_types'][i],
+                    'custom': extracted['custom'][i],
+                    # 'coordinate_system': extracted['coordinate_system']
+                }
+                features.append(row)
+                
+                polyindex_to_napari_index[polyindex].append(extracted['indicies'][i])
+            
+    features_df = pd.DataFrame(features)
+    from SynAPSeg.utils import utils_geometry as ugeom
+    features_df = ugeom.santize_napari_shapes_features_df(features_df)
+    
+    return features_df, polyindex_to_napari_index
+
+def geojsonPoly_to_napari_shapes_data(polycollection) -> tuple[list[np.ndarray], pd.DataFrame]:
+    
+    features_df, polyindex_to_napari_index = geojsonPoly_get_features_df(polycollection)
+    
+    shapes_data = []
+    for polyindex, gjp in enumerate(polycollection):
+        napari_inds = polyindex_to_napari_index[polyindex]
+        asShapely = gjp.to_shapely()
+        print(type(asShapely))
+        asNapari = convert_shapely_to_napari(asShapely)
+        shapes_data.extend(asNapari)
+        
+    return shapes_data, features_df
+
+def cart2mat(coords):
+    """converts cartesian coordinates to matrix coordinates"""
+    return np.column_stack((coords[:,1], coords[:,0]))
+    
+def convert_shapely_to_napari(shapely_obj):
+    """
+    Parses a Shapely Polygon or MultiPolygon (including holes) 
+    and adds it to the napari viewer as a Shapes layer.
+    """
+    from shapely.geometry import Polygon, MultiPolygon
+    
+    # Standardize input to a list of Polygons
+    if isinstance(shapely_obj, Polygon):
+        polygons = [shapely_obj]
+    elif isinstance(shapely_obj, MultiPolygon):
+        polygons = list(shapely_obj.geoms)
+    else:
+        raise TypeError("Input must be a Shapely Polygon or MultiPolygon")
+        
+    shape_data = []
+    
+    for poly in polygons:
+        # Extract exterior coordinates as a NumPy array (swap XY to YX if needed for image alignment)
+        # Shapely stores coordinates as (X, Y). Napari usually expects (Y, X) or (Z, Y, X).
+        ext_coords = np.array(poly.exterior.coords)
+        
+        if not poly.interiors: # No holes
+            shape_data.append(cart2mat(ext_coords))
+        else:
+            # format as list of arrays: [exterior, hole1, hole2, ...] - unclear if napari supports holes
+            poly_rings = [cart2mat(ext_coords)]
+            for interior in poly.interiors:
+                poly_rings.append(cart2mat(np.array(interior.coords)))
+            shape_data.append(poly_rings)
+    
+    return shape_data
+
+
+
+if __name__ == '__main__':
+    from SynAPSeg.IO.project import Project
+    proj = Project(r"J:\SEGMENTATION_DATASETS\2026_0914_AMI_cfosTimecourse")
+    ex = proj.examples[0]
+    
+    LABEL_INT_MAP, FILE_MAP, image_dict, get_image_list = load_example_images(ex, use_prefix_as_key=False)
+    exmd = image_dict.pop('metadata')
+    images_to_display, viewer_kwargs = preproc_images_for_display(exmd, FILE_MAP, image_dict, ['annotated_shapes_constrained.geojson'])

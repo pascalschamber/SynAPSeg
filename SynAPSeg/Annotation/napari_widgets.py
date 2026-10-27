@@ -2,12 +2,11 @@ import os
 import sys
 import re
 import pprint
-from typing import Optional,  Dict, List
+from typing import Optional,  Dict, List, Any
 import yaml
 
 import napari
-from napari.layers import Labels
-from napari.layers import Labels, Image
+from napari.layers import Labels, Image, Shapes
 from napari.types import LayerDataTuple
 from napari.viewer import Viewer
 from magicgui import magicgui
@@ -18,8 +17,9 @@ from skimage.morphology import binary_dilation, binary_erosion
 from skimage.draw import draw
 from scipy.ndimage import binary_fill_holes
 from weakref import WeakKeyDictionary
+import pandas as pd
 
-from qtpy.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve, QPoint
+from qtpy.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve, QPoint, Signal
 from qtpy.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QCheckBox, QListWidget, QSpinBox, QDoubleSpinBox,
     QPushButton, QLabel, QRadioButton, QButtonGroup, QLineEdit,
@@ -27,6 +27,7 @@ from qtpy.QtWidgets import (
     QFileDialog, QToolButton, QStyle, QListWidgetItem, QSizePolicy,
     QTextEdit, QDialog, QComboBox, QSlider,
     QScrollArea, QGroupBox,QTabWidget, QGraphicsOpacityEffect, 
+    QFormLayout,
 )
 
 
@@ -81,12 +82,14 @@ def _as_qwidget(widget) -> QWidget:
     )
 
 
+
+
 def make_tabbed_control_panel(
     tab_to_widgets: Dict[str, List[QWidget]],
 ) -> QWidget:
     """
     Create a single QWidget containing a QTabWidget where each tab is scrollable
-    and holds a vertical list of widgets.
+    and holds a vertical list of user-resizable group boxes.
 
     Parameters
     ----------
@@ -112,10 +115,10 @@ def make_tabbed_control_panel(
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
 
-        inner = QWidget()
-        inner_layout = QVBoxLayout(inner)
-        inner_layout.setContentsMargins(4, 4, 4, 4)
-        inner_layout.setSpacing(4)
+        # Use a vertical QSplitter instead of a QVBoxLayout so group boxes are resizable
+        splitter = QSplitter(Qt.Orientation.Vertical)
+        splitter.setContentsMargins(4, 4, 4, 4)
+        splitter.setChildrenCollapsible(False)  # Prevent boxes from being crushed to 0px
 
         for w in widgets:
             if w is None:
@@ -124,17 +127,29 @@ def make_tabbed_control_panel(
             title = _infer_widget_title(w)
             qwidget = _as_qwidget(w)
 
-            # Wrap each widget in a group box so you can see what is what
+            # Wrap each widget in a group box
             box = QGroupBox(title)
+            box.setSizePolicy(
+                QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding
+            )
             box_layout = QVBoxLayout(box)
-            box_layout.setContentsMargins(4, 10, 4, 4) # add a little space to avoid cropping the bottom of the label
+            box_layout.setContentsMargins(4, 10, 4, 4)
             box_layout.addWidget(qwidget)
 
-            inner_layout.addWidget(box)
+            splitter.addWidget(box)
 
-        inner_layout.addStretch(1)
-        scroll.setWidget(inner)
+        # Add an expanding dummy widget at the bottom to act like addStretch(1),
+        # allowing the bottom-most group box to be resized upward.
+        spacer = QWidget()
+        spacer.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding
+        )
+        splitter.addWidget(spacer)
+        
+        # Give the spacer a higher stretch factor so widgets start compact at the top
+        splitter.setStretchFactor(splitter.count() - 1, 1)
 
+        scroll.setWidget(splitter)
         tabs.addTab(scroll, tab_name)
 
     return container
@@ -331,12 +346,36 @@ def get_filter_object(
 
 
 class ExportWidget:
-    def __init__(self, basedir, exmd, logger=None):
+    def __init__(self, basedir: str, exmd: dict, logger: Optional[Any]=None, viewer: Optional[napari.viewer.Viewer]=None):
+        """
+            registered_shape_layers:
+                list
+                pass already loaded, previously registered shapes as dict of id: layer
+        """
         self.basedir = basedir 
         self.exmd = exmd or {} # allow this to work outside of example context - though some features won't work
         self.ROI_map = {}
+        self.shape_layers = {} # track annotated shape layers
         self.logger = logger
+        self.viewer: napari.viewer.Viewer = napari.current_viewer() if viewer is None else viewer  # ty: ignore[invalid-assignment]
+
+        self.parse_previously_exported_ROIs()
         
+    def parse_previously_exported_ROIs(self):
+        # parse previously registered exports
+        exported_ROIs_md = (self.exmd.get('data_metadata') or {}).get('ROI_exports') or {}
+        prev_registered_shape_layers = {}
+        if exported_ROIs_md:
+            present_layer_names = set([l.name for l in self.viewer.layers])
+            for filename in exported_ROIs_md.keys():
+                layer_name = ug.get_prefix(filename)
+                if layer_name in present_layer_names:
+                    layer = self.viewer.layers[layer_name]
+                    md = exported_ROIs_md[filename]
+                    prev_registered_shape_layers[layer_name] = md
+                    self.track_persistent_layer(layer, md)
+                    
+                        
     def get_basedir(self):
         if self.basedir is None:
             raise ValueError("No base directory set. Cannot export.")
@@ -362,11 +401,11 @@ class ExportWidget:
             "format":format, "shape":roi_shape, "dimension_selected":dimension,
         }
     
-    def register_export(self, layer):
+    def register_export(self, layer, filepath):
 
         # TODO: perhaps much of this code should be handled by ROI widget or a context manager
         name = layer.name
-        shape = layer.data.shape
+        fn = Path(filepath).name
 
         # TODO: need to validate - many ways this could get screwed up 
         # e.g. you create an ROI delete it and rename a new one
@@ -383,22 +422,65 @@ class ExportWidget:
             self.exmd['data_metadata']['ROI_exports'] = {}
         
         # check if exporting a registered ROI
-        registered = name in self.ROI_map 
+        registered = (id(layer) in self.shape_layers.keys()) or (name in self.ROI_map)
 
         if registered:
-            roi_info = self.ROI_map.get(name) or {}
-            self.exmd['data_metadata']['ROI_exports'][name] = roi_info
-            self.exmd['data_metadata']['data_shapes'][name] = shape 
-            self.exmd['data_metadata']['data_formats'][name] = roi_info['format']
+            if id(layer) in self.shape_layers.keys():
+                roi_info = {k:v for k,v in self.shape_layers[id(layer)].items() if k!='layer'}
+                roi_info['features'] = layer.features.to_dict() if isinstance(layer.features, pd.DataFrame) else layer.features
+            else:
+                roi_info = self.ROI_map.get(name) or {}
+                shape = layer.data.shape
+                self.exmd['data_metadata']['data_shapes'][fn] = shape 
+                self.exmd['data_metadata']['data_formats'][fn] = roi_info['format']
+                
+            self.exmd['data_metadata']['ROI_exports'][fn] = roi_info
             ug.log_or_print(f'register_export of {name} as an ROI', self.logger)
         else:
-            ug.log_or_print(f'register_export of {name} - not an ROI ({self.ROI_map})', self.logger)
+            registered_layers = {**self.ROI_map, **self.shape_layers}
+            ug.log_or_print(f'register_export of {name} - not an ROI ({registered_layers})', self.logger)
             
-    
+    def track_persistent_layer(self, layer, metadata: Optional[dict]=None):
+        """ 
+        Track reference to a layer which should persist even if user renames the layer in the GUI 
+        
+        Args:
+            layer: The layer to track
+            metadata: If layer already was exported, supply the exmd ROI export metadata
+                expects keys 'ROI_TYPE', 'parent_layer_name' and 'parent_layer_shape'
+        
+        Returns:
+            None
+        """
+        
+        # handle loading of already existing layers
+        if metadata:
+            pln = metadata.get('parent_layer_name', '')
+            pln_shape = metadata.get('parent_layer_shape', None)
+            ROI_TYPE = metadata.get('ROI_TYPE', None)
+        
+        else: 
+            # check if parent layer name exists
+            pln = layer.parent_layer_name
+            parent_layer = self.viewer.layers[pln] if pln in self.viewer.layers else None
+            
+            pln_shape = None
+            if parent_layer and isinstance(parent_layer.data, np.ndarray):
+                pln_shape = list(parent_layer.data.shape)
+            
+            ROI_TYPE = 'napari_csv'
+
+        self.shape_layers[id(layer)] = {
+            'layer':layer,
+            'ndim': layer.ndim,
+            'parent_layer_name': pln,
+            'parent_layer_shape': pln_shape,
+            'ROI_TYPE': ROI_TYPE,
+        }
+        ug.log_or_print(f"Tracking layer: {layer.name} <{ROI_TYPE}> (Object ID: {id(layer)})", self.logger)
 
     def write_exmd_update(self):
         MetadataParser.write_metadata(self.get_basedir(), self.exmd)
-
 
     def set_basedir(self, basedir):
         self.basedir = basedir
@@ -1187,7 +1269,8 @@ def layer_export(viewer, exwidg):
     # --- Function to update exportable layers ---
     def update_layer_choices(event=None):
         existing_names = {layer_list.item(i).text() for i in range(layer_list.count())}
-        current_layer_names = [layer.name for layer in viewer.layers if isinstance(layer.data, np.ndarray)]
+        is_valid_export_layer = lambda l: isinstance(l.data, np.ndarray) or isinstance(l, napari.layers.Shapes)
+        current_layer_names = [layer.name for layer in viewer.layers if is_valid_export_layer(layer)]
 
         # Update the list without overwriting selection if possible
         layer_list.clear()
@@ -1214,13 +1297,14 @@ def layer_export(viewer, exwidg):
         _path_already_exists = []
         for item in selected_items:
             layer_name = item.text()
+            layer = viewer.layers[layer_name]
             filename = (
-                f"{layer_name}.tiff" if layer_name.startswith('ROI_')
+                f"{layer_name}.csv" if isinstance(layer, napari.layers.Shapes)
+                else f"{layer_name}.tiff" if layer_name.startswith('ROI_')
                 else f"annotated_{layer_name}.tiff" if not layer_name.startswith('annotated_')
                 else f"{layer_name}.tiff"
             )
             p = os.path.join(basedir, filename)
-            layer = viewer.layers[layer_name]
 
             # if arrive here assumes good to write
             _writes.append([p, layer_name])
@@ -1236,8 +1320,13 @@ def layer_export(viewer, exwidg):
         # do writing             
         for (p, layername) in _writes:
             layer = viewer.layers[layername]
-            layer.save(p)
-            exwidg.register_export(layer)
+            if isinstance(layer, napari.layers.Shapes):
+                from SynAPSeg.Annotation.napari_utils import export_shapes_to_csv
+                export_shapes_to_csv(layer, p)
+            else:
+                layer.save(p)
+            
+            exwidg.register_export(layer, p)
             print(f"Saved {filename} to {p}")
             successful_exports += 1
 
@@ -2419,3 +2508,732 @@ def binary_closing_bboximpl(data:np.ndarray, struct:np.ndarray):
     return closed_mask
 
 
+class ShapeFeatureAnnotator(QWidget):
+    """
+    Napari widget for creating annotated Shapes layers and attaching
+    metadata features (name, type, custom attributes) to individual polygons.
+    """
+    # Emits the actual napari.layers.Shapes instance upon creation
+    layer_created = Signal(object)
+
+    def __init__(self, viewer: napari.Viewer, exwidg: 'ExportWidget', parent: QWidget | None = None):
+        super().__init__(parent)
+        self.name = 'Add annotated shapes layer'
+        self.viewer = viewer
+        self.exwidg = exwidg
+        self._current_layer: Shapes | None = None
+
+        self._build_ui()
+        self._connect_viewer_events()
+
+    def _build_ui(self):
+        layout = QVBoxLayout(self)
+
+        # --- Layer Creation Section ---
+        creation_group = QGroupBox("Create Shapes Layer")
+        creation_layout = QVBoxLayout(creation_group)
+
+        dims_layout = QHBoxLayout()
+        dims_layout.addWidget(QLabel("Dimensions:"))
+        self.dims_combo = QComboBox()
+        self.dims_combo.addItems(["Same as active layer", "2D", "3D"])
+        dims_layout.addWidget(self.dims_combo)
+        creation_layout.addLayout(dims_layout)
+
+        self.btn_create_layer = QPushButton("Create Shapes Layer")
+        self.btn_create_layer.clicked.connect(self._on_create_layer_clicked)
+        creation_layout.addWidget(self.btn_create_layer)
+        layout.addWidget(creation_group)
+
+        # --- Feature Annotation Section ---
+        feature_group = QGroupBox("Polygon Features")
+        feature_layout = QFormLayout(feature_group)
+
+        self.name_edit = QLineEdit()
+        self.name_edit.setPlaceholderText("e.g. Region_01")
+        feature_layout.addRow("Name:", self.name_edit)
+
+        self.type_combo = QComboBox()
+        self.type_combo.addItems(["exclusive", "parent", "child"])
+        feature_layout.addRow("Type:", self.type_combo)
+
+        self.custom_edit = QTextEdit()
+        self.custom_edit.setPlaceholderText("Arbitrary metadata, notes, or JSON...")
+        self.custom_edit.setMaximumHeight(80)
+        feature_layout.addRow("Custom:", self.custom_edit)
+
+        self.btn_apply_features = QPushButton("Apply to Selected Shape(s)")
+        self.btn_apply_features.clicked.connect(self._on_apply_features_clicked)
+        feature_layout.addRow(self.btn_apply_features)
+
+        layout.addWidget(feature_group)
+        layout.addStretch()
+
+    def _connect_viewer_events(self):
+        """Track layer selection to bind feature update listeners."""
+        self.viewer.layers.selection.events.active.connect(self._on_active_layer_changed)
+        self._on_active_layer_changed()
+        self.layer_created.connect(self.exwidg.track_persistent_layer)
+
+    def _on_active_layer_changed(self, event=None):
+        active = self.viewer.layers.selection.active
+        # Disconnect old layer events if previously connected
+        if self._current_layer is not None:
+            try:
+                self._current_layer.selected_data.events.changed.disconnect(self._on_shape_selection_changed)
+            except (AttributeError, RuntimeError, ValueError):
+                pass
+
+        if isinstance(active, Shapes):
+            self._current_layer = active
+            try:
+                self._current_layer.selected_data.events.changed.connect(self._on_shape_selection_changed)
+            except (AttributeError, RuntimeError, ValueError):
+                pass
+            self._ensure_feature_columns(self._current_layer)
+            self._on_shape_selection_changed()
+        else:
+            self._current_layer = None
+
+    def _ensure_feature_columns(self, layer: Shapes):
+        """Ensure the features DataFrame and defaults contain required keys."""
+        required_cols = ["name", "type", "custom"]
+        
+        # Initialize DataFrame if empty or missing columns
+        if layer.features is None or len(layer.features.columns) == 0:
+            n_shapes = len(layer.data)
+            layer.features = pd.DataFrame(
+                {
+                    "name": [f"Shape_{i}" for i in range(n_shapes)],
+                    "type": ["exclusive"] * n_shapes,
+                    "custom": [""] * n_shapes,
+                }
+            )
+        else:
+            for col in required_cols:
+                if col not in layer.features.columns:
+                    layer.features[col] = "exclusive" if col == "type" else ""
+
+        # Set default values for newly drawn polygons
+        layer.feature_defaults = {
+            "name": "unnamed",
+            "type": "exclusive",
+            "custom": "",
+        }
+
+        # Configure centered text rendering
+        layer.text = {
+            "string": "{name} ({type})",
+            "anchor": "center",
+            "color": "yellow",
+            "size": 9,
+        }
+
+    def _on_create_layer_clicked(self):
+        choice = self.dims_combo.currentText()
+        active = self.viewer.layers.selection.active
+
+        parent_layer_name = None
+        if choice == "2D":
+            ndim = 2
+        elif choice == "3D":
+            ndim = 3
+        else:
+            ndim = active.ndim if active is not None else 2
+            parent_layer_name = active.name if active else None
+
+        # Create empty feature table
+        features = pd.DataFrame(columns=["name", "type", "custom"])
+        
+        new_layer = self.viewer.add_shapes(
+            name="annotated_shapes",
+            ndim=ndim,
+            features=features,
+            feature_defaults={"name": "unnamed", "type": "exclusive", "custom": ""},
+            text={
+                "string": "{name} ({type})",
+                "anchor": "center",
+                "color": "yellow",
+                "size": 9,
+            },
+            face_color='transparent',
+            edge_width=10
+        )
+        
+        new_layer.parent_layer_name = parent_layer_name
+
+        # Set drawing tool to polygon by default
+        new_layer.mode = "add_polygon"
+
+        # Emit direct reference to the newly created layer
+        self.layer_created.emit(new_layer)
+
+    def _on_shape_selection_changed(self, event=None):
+        """Populate input fields when an existing shape is clicked."""
+        if self._current_layer is None or not hasattr(self._current_layer, "selected_data"):
+            return
+
+        selected_indices = list(self._current_layer.selected_data)
+        if len(selected_indices) == 1:
+            idx = selected_indices[0]
+            features = self._current_layer.features
+            if idx < len(features):
+                self.name_edit.setText(str(features.iloc[idx].get("name", "")))
+                type_val = str(features.iloc[idx].get("type", "exclusive"))
+                index = self.type_combo.findText(type_val)
+                if index != -1:
+                    self.type_combo.setCurrentIndex(index)
+                self.custom_edit.setPlainText(str(features.iloc[idx].get("custom", "")))
+
+    def _on_apply_features_clicked(self):
+        """Write current field values to the selected shape(s) and update centroid labels."""
+        if self._current_layer is None:
+            QMessageBox.warning(self, "No Layer", "Please select a Shapes layer first.")
+            return
+
+        selected_indices = list(self._current_layer.selected_data)
+        if not selected_indices:
+            QMessageBox.information(
+                self, "No Selection", "Select one or more shapes using the Select tool (key 'S')."
+            )
+            return
+
+        name_val = self.name_edit.text()
+        type_val = self.type_combo.currentText()
+        custom_val = self.custom_edit.toPlainText()
+
+        features = self._current_layer.features.copy()
+
+        # Handle size discrepancies if shapes were added outside feature update events
+        while len(features) < len(self._current_layer.data):
+            features.loc[len(features)] = ["unnamed", "exclusive", ""]
+
+        for idx in selected_indices:
+            features.at[idx, "name"] = name_val
+            features.at[idx, "type"] = type_val
+            features.at[idx, "custom"] = custom_val
+
+        self._current_layer.features = features
+        self._current_layer.refresh_text()
+
+
+import os
+os.environ["QT_API"] = "pyqt6"
+
+import traceback
+from typing import Optional, Any
+import numpy as np
+import scipy.ndimage as ndi
+import skimage.filters as filters
+import skimage.morphology as morph
+import skimage.segmentation as seg
+import skimage.exposure as exposure
+import skimage.feature as feature
+import napari
+
+from PyQt6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QPlainTextEdit,
+    QPushButton, QComboBox, QLabel, QCheckBox, QSplitter,
+    QScrollArea, QFormLayout, QDoubleSpinBox, QSpinBox, QGroupBox
+)
+from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QFont, QKeySequence, QShortcut
+
+
+DEFAULT_PIPELINE = """# 1. Define interactive parameters in PARAMS to auto-generate UI controls!
+PARAMS = {
+    'bg_norm_enabled': True,
+    'local_bg_radius': 25,
+    'gaussian_sigma': 1.0,
+    'tophat_footprint': 8,
+    'snr_threshold': 4.0,
+    'min_object_size': 20,
+    'use_watershed': True,
+    'watershed_min_dist': 6,
+    'watershed_h_maxima': 0.8,
+    'split_min_cluster_size': 75,
+    'watershed_compactness': 0.0,
+    'return_labels': True,
+}
+
+# 2. Write your pipeline using `img` (2D/3D numpy array)
+# Pre-imported: np, ndi (scipy.ndimage), filters, morph, seg, exposure, feature
+
+img_float = img.astype(np.float32)
+
+# --- STEP 1: PERFUSION-ROBUST BACKGROUND NORMALIZATION ---
+if PARAMS['bg_norm_enabled']:
+    bg_rad = int(PARAMS['local_bg_radius'])
+    if bg_rad > 0:
+        local_bg = filters.gaussian(img_float, sigma=bg_rad)
+        centered = img_float - local_bg
+    else:
+        centered = img_float
+
+    bg_cutoff = np.percentile(centered, 90)
+    bg_pixels = centered[centered <= bg_cutoff]
+
+    bg_median = np.median(bg_pixels)
+    bg_mad_std = 1.4826 * np.median(np.abs(bg_pixels - bg_median)) + 1e-8
+    norm_img = (centered - bg_median) / bg_mad_std
+else:
+    norm_img = img_float
+
+# --- STEP 2: DENOISING & MORPHOLOGICAL ENHANCEMENT ---
+smoothed = filters.gaussian(norm_img, sigma=PARAMS['gaussian_sigma'])
+
+selem = morph.disk(int(PARAMS['tophat_footprint']))
+if smoothed.ndim == 3:
+    selem = np.expand_dims(selem, axis=0)
+enhanced = morph.white_tophat(smoothed, footprint=selem)
+
+# --- STEP 3: DENSITY-INDEPENDENT THRESHOLDING ---
+if PARAMS['bg_norm_enabled']:
+    th_cutoff = np.percentile(enhanced, 90)
+    th_bg = enhanced[enhanced <= th_cutoff]
+    th_med = np.median(th_bg)
+    th_std = 1.4826 * np.median(np.abs(th_bg - th_med)) + 1e-8
+    
+    enhanced_snr = (enhanced - th_med) / th_std
+    binary = enhanced_snr > PARAMS['snr_threshold']
+    display_img = enhanced_snr
+else:
+    thresh_val = filters.threshold_otsu(enhanced)
+    binary = enhanced > thresh_val
+    display_img = enhanced
+
+
+# --- STEP 4: SIZE-GATED WATERSHED ---
+if PARAMS['return_labels']:
+    cleaned = morph.remove_small_objects(binary, min_size=int(PARAMS['min_object_size']))
+    
+    if PARAMS['use_watershed']:
+        distance = ndi.distance_transform_edt(cleaned)
+        
+        h_val = float(PARAMS['watershed_h_maxima'])
+        dist_suppressed = morph.h_maxima(distance, h=h_val) if h_val > 0 else distance
+
+        coords = feature.peak_local_max(
+            distance,
+            min_distance=max(1, int(PARAMS['watershed_min_dist'])),
+            labels=dist_suppressed
+        )
+        
+        mask_seeds = np.zeros(distance.shape, dtype=bool)
+        if coords.size > 0:
+            mask_seeds[tuple(coords.T)] = True
+
+        initial_cc, num_cc = ndi.label(cleaned)
+        if num_cc > 0:
+            component_sizes = ndi.sum(cleaned, initial_cc, range(1, num_cc + 1))
+            min_cluster_size = int(PARAMS['split_min_cluster_size'])
+
+            for lbl_idx, size in enumerate(component_sizes, start=1):
+                comp_mask = (initial_cc == lbl_idx)
+                num_seeds = np.count_nonzero(mask_seeds & comp_mask)
+                
+                if size < min_cluster_size or num_seeds == 0:
+                    mask_seeds[comp_mask] = False
+                    comp_dist = distance * comp_mask
+                    peak_idx = np.unravel_index(np.argmax(comp_dist), comp_dist.shape)
+                    mask_seeds[peak_idx] = True
+
+        markers = ndi.label(mask_seeds)[0]
+        labels = seg.watershed(
+            -distance,
+            markers,
+            mask=cleaned,
+            compactness=max(0.0, float(PARAMS['watershed_compactness']))
+        )
+    else:
+        labels = ndi.label(cleaned)[0]
+else:
+    result = display_img
+"""
+
+
+class CodeExecutionWidget(QWidget):
+    def __init__(
+        self,
+        viewer: Optional[napari.Viewer] = None,
+        exwidg: Optional[Any] = None,
+        metadata_key: str = "segmentation_script",
+    ):
+        super().__init__()
+        self.exwidg = exwidg
+        self.metadata_key = metadata_key
+
+        # Resolve viewer from argument, exwidg, or current_viewer
+        if viewer is not None:
+            self.viewer = viewer
+        elif self.exwidg is not None and getattr(self.exwidg, "viewer", None) is not None:
+            self.viewer = self.exwidg.viewer
+        else:
+            self.viewer = napari.current_viewer()
+
+        self.param_widgets = {}
+        self.current_params = {}
+        self.last_executed_code: Optional[str] = None
+        self._updating_ui = False
+
+        # Debounce timer so live slider dragging doesn't freeze the UI
+        self.debounce_timer = QTimer()
+        self.debounce_timer.setSingleShot(True)
+        self.debounce_timer.setInterval(150)
+        self.debounce_timer.timeout.connect(self.execute_code)
+
+        self._init_ui()
+        self._preload_from_exmd()
+        self._connect_layer_events()
+        self._refresh_layer_select()
+        self.parse_params_and_build_ui()
+
+    def _preload_from_exmd(self):
+        """Ensure annotation_metadata exists and preload saved script if present."""
+        if self.exwidg is None or not hasattr(self.exwidg, "exmd"):
+            return
+
+        annot_md = self.exwidg.exmd.get("annotation_metadata", None)
+        if not isinstance(annot_md, dict):
+            annot_md = {"notes": "", "status": ""}
+            self.exwidg.exmd["annotation_metadata"] = annot_md
+
+        saved_script = annot_md.get(self.metadata_key, "")
+        if saved_script and isinstance(saved_script, str) and saved_script.strip():
+            self.editor.setPlainText(saved_script)
+            self.log_message(f"Preloaded saved '{self.metadata_key}' from example metadata.")
+
+    def _init_ui(self):
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(6, 6, 6, 6)
+
+        # --- Top Bar: Layer Selection & Output Mode ---
+        top_bar = QHBoxLayout()
+        top_bar.addWidget(QLabel("Source Layer:"))
+        self.layer_combo = QComboBox()
+        top_bar.addWidget(self.layer_combo, stretch=1)
+
+        self.slice_only_cb = QCheckBox("2D Slice Only (Fast)")
+        self.slice_only_cb.setToolTip("Process only the currently visible 2D slice for >2D stacks")
+        self.slice_only_cb.setChecked(True)
+        self.slice_only_cb.stateChanged.connect(self._trigger_auto_run)
+        top_bar.addWidget(self.slice_only_cb)
+        main_layout.addLayout(top_bar)
+
+        # --- Splitter for Editor, Dynamic Sliders, and Console ---
+        splitter = QSplitter(Qt.Orientation.Vertical)
+
+        # 1. Code Editor
+        editor_container = QWidget()
+        editor_layout = QVBoxLayout(editor_container)
+        editor_layout.setContentsMargins(0, 0, 0, 0)
+
+        editor_header = QHBoxLayout()
+        editor_header.addWidget(QLabel("<b>Pipeline Code</b> (<code>Ctrl+Enter</code> to run):"))
+        self.sync_params_btn = QPushButton("Sync PARAMS to UI")
+        self.sync_params_btn.setToolTip("Parse the PARAMS dict in code and build interactive controls")
+        self.sync_params_btn.clicked.connect(self.parse_params_and_build_ui)
+        editor_header.addWidget(self.sync_params_btn)
+        editor_layout.addLayout(editor_header)
+
+        self.editor = QPlainTextEdit()
+        font = QFont("Consolas" if os.name == "nt" else "Monospace", 10)
+        font.setStyleHint(QFont.StyleHint.Monospace)
+        self.editor.setFont(font)
+        self.editor.setPlainText(DEFAULT_PIPELINE)
+        self.editor.setTabStopDistance(self.editor.fontMetrics().horizontalAdvance(" ") * 4)
+        editor_layout.addWidget(self.editor)
+        splitter.addWidget(editor_container)
+
+        # 2. Dynamic Parameters Area
+        self.param_group = QGroupBox("Interactive Parameters (Auto-generated from PARAMS)")
+        param_group_layout = QVBoxLayout(self.param_group)
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.param_form_widget = QWidget()
+        self.param_form = QFormLayout(self.param_form_widget)
+        self.scroll_area.setWidget(self.param_form_widget)
+        param_group_layout.addWidget(self.scroll_area)
+        splitter.addWidget(self.param_group)
+
+        # 3. Execution Controls, Save Snippet Button & Error Console
+        bottom_container = QWidget()
+        bottom_layout = QVBoxLayout(bottom_container)
+        bottom_layout.setContentsMargins(0, 0, 0, 0)
+
+        ctrl_layout = QHBoxLayout()
+        self.run_btn = QPushButton("▶ Run Pipeline (Ctrl+Enter)")
+        self.run_btn.setStyleSheet("font-weight: bold; padding: 5px;")
+        self.run_btn.clicked.connect(self.execute_code)
+        ctrl_layout.addWidget(self.run_btn, stretch=1)
+
+        self.save_snippet_btn = QPushButton("Save code snippet")
+        self.save_snippet_btn.setToolTip("Save the executed script to annotation_metadata in the example YAML")
+        self.save_snippet_btn.setStyleSheet("padding: 5px;")
+        self.save_snippet_btn.clicked.connect(self.save_code_snippet)
+        ctrl_layout.addWidget(self.save_snippet_btn)
+
+        self.auto_run_cb = QCheckBox("Auto-run")
+        self.auto_run_cb.setChecked(False)
+        ctrl_layout.addWidget(self.auto_run_cb)
+        bottom_layout.addLayout(ctrl_layout)
+
+        self.console = QPlainTextEdit()
+        self.console.setReadOnly(True)
+        self.console.setFont(font)
+        self.console.setMaximumHeight(110)
+        self.console.setPlaceholderText("Execution logs and tracebacks appear here...")
+        bottom_layout.addWidget(self.console)
+        splitter.addWidget(bottom_container)
+
+        splitter.setSizes([380, 180, 120])
+        main_layout.addWidget(splitter)
+
+        # Shortcut: Ctrl+Enter to execute
+        self.run_shortcut = QShortcut(QKeySequence("Ctrl+Return"), self)
+        self.run_shortcut.activated.connect(self.execute_code)
+
+    def save_code_snippet(self):
+        """Saves the executed script (or current editor text) into exwidg.exmd['annotation_metadata']."""
+        if self.exwidg is None:
+            self.log_message("Cannot save: No ExportWidget (exwidg) was provided.", error=True)
+            return
+
+        # Prefer the exact code that was last executed; fall back to current editor text
+        script_to_save = self.last_executed_code or self.editor.toPlainText()
+
+        try:
+            annot_md = self.exwidg.exmd.get("annotation_metadata", None)
+            if not isinstance(annot_md, dict):
+                annot_md = {"notes": "", "status": ""}
+                self.exwidg.exmd["annotation_metadata"] = annot_md
+
+            # Store both the full script and the parsed parameter dictionary for easy downstream querying
+            self.exwidg.exmd["annotation_metadata"][self.metadata_key] = script_to_save
+            self.exwidg.exmd["annotation_metadata"]["segmentation_params"] = dict(self.current_params)
+            self.exwidg.exmd["annotation_metadata"]["segmentation_source_layer"] = self.layer_combo.currentText()
+
+            self.exwidg.write_exmd_update()
+
+            message = f"Code snippet saved to annotation_metadata['{self.metadata_key}']"
+            print(message)
+            self.log_message(message, error=False)
+
+            # Trigger ToastLabel if available in your environment (matching AddNoteWidget)
+            if "ToastLabel" in globals():
+                ToastLabel(self, "Code snippet saved to metadata!", display_time_ms=1500)
+
+        except Exception:
+            tb = traceback.format_exc()
+            self.log_message(f"Failed to save code snippet to metadata:\n{tb}", error=True)
+
+    def _connect_layer_events(self):
+        if self.viewer is None:
+            return
+        self.viewer.layers.events.inserted.connect(self._refresh_layer_select)
+        self.viewer.layers.events.removed.connect(self._refresh_layer_select)
+        self.viewer.layers.events.reordered.connect(self._refresh_layer_select)
+        self.viewer.dims.events.current_step.connect(self._on_slice_change)
+
+    def _refresh_layer_select(self, event=None):
+        if self.viewer is None:
+            return
+        current_selection = self.layer_combo.currentText()
+        self.layer_combo.blockSignals(True)
+        self.layer_combo.clear()
+        for layer in self.viewer.layers:
+            if isinstance(layer, napari.layers.Image) and not layer.name.endswith(" (Result)"):
+                self.layer_combo.addItem(layer.name)
+        idx = self.layer_combo.findText(current_selection)
+        if idx >= 0:
+            self.layer_combo.setCurrentIndex(idx)
+        self.layer_combo.blockSignals(False)
+
+    def _on_slice_change(self, event=None):
+        if self.slice_only_cb.isChecked() and self.auto_run_cb.isChecked():
+            self.debounce_timer.start()
+
+    def _trigger_auto_run(self):
+        if self.auto_run_cb.isChecked() and not self._updating_ui:
+            self.debounce_timer.start()
+
+    def parse_params_and_build_ui(self):
+        code = self.editor.toPlainText()
+        env = {}
+        try:
+            exec(compile(code, "<string>", "exec"), {"np": np}, env)
+        except Exception:
+            import ast
+            try:
+                tree = ast.parse(code)
+                for node in tree.body:
+                    if isinstance(node, ast.Assign):
+                        for target in node.targets:
+                            if isinstance(target, ast.Name) and target.id == "PARAMS":
+                                env["PARAMS"] = ast.literal_eval(node.value)
+            except Exception as e:
+                self.log_message(f"Could not parse PARAMS dict: {e}", error=True)
+                return
+
+        params = env.get("PARAMS", {})
+        if not isinstance(params, dict):
+            return
+
+        self._updating_ui = True
+        while self.param_form.count():
+            item = self.param_form.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        self.param_widgets.clear()
+        self.current_params = dict(params)
+
+        for key, val in params.items():
+            if isinstance(val, bool):
+                w = QCheckBox()
+                w.setChecked(val)
+                w.stateChanged.connect(lambda state, k=key: self._on_param_ui_changed(k, bool(state)))
+            elif isinstance(val, int):
+                w = QSpinBox()
+                w.setRange(-100000, 100000)
+                w.setSingleStep(1)
+                w.setValue(val)
+                w.valueChanged.connect(lambda v, k=key: self._on_param_ui_changed(k, int(v)))
+            elif isinstance(val, float):
+                w = QDoubleSpinBox()
+                w.setDecimals(4)
+                w.setRange(-1e6, 1e6)
+                w.setSingleStep(max(0.01, abs(val) * 0.1) if val != 0 else 0.1)
+                w.setValue(val)
+                w.valueChanged.connect(lambda v, k=key: self._on_param_ui_changed(k, float(v)))
+            else:
+                continue
+
+            self.param_widgets[key] = w
+            self.param_form.addRow(QLabel(f"{key}:"), w)
+
+        self._updating_ui = False
+        self.log_message(f"Synced {len(self.param_widgets)} interactive parameters from PARAMS.")
+
+    def _on_param_ui_changed(self, key, value):
+        self.current_params[key] = value
+        self._update_params_in_editor_text()
+        self._trigger_auto_run()
+
+    def _update_params_in_editor_text(self):
+        import re
+        code = self.editor.toPlainText()
+        formatted_lines = ["PARAMS = {"]
+        for k, v in self.current_params.items():
+            formatted_lines.append(f"    {repr(k)}: {repr(v)},")
+        formatted_lines.append("}")
+        new_params_block = "\n".join(formatted_lines)
+
+        pattern = r"PARAMS\s*=\s*\{[^}]*\}"
+        if re.search(pattern, code):
+            new_code = re.sub(pattern, new_params_block, code, count=1)
+            cursor = self.editor.textCursor()
+            pos = cursor.position()
+            self.editor.blockSignals(True)
+            self.editor.setPlainText(new_code)
+            cursor.setPosition(min(pos, len(new_code)))
+            self.editor.setTextCursor(cursor)
+            self.editor.blockSignals(False)
+
+    def execute_code(self):
+        layer_name = self.layer_combo.currentText()
+        if not layer_name or layer_name not in self.viewer.layers:
+            self.log_message("No valid source image layer selected.", error=True)
+            return
+
+        source_layer = self.viewer.layers[layer_name]
+        raw_data = np.asarray(source_layer.data)
+
+        is_sliced = False
+        if self.slice_only_cb.isChecked() and raw_data.ndim > 2:
+            current_step = self.viewer.dims.current_step[:-2]
+            img_input = raw_data[current_step].copy()
+            is_sliced = True
+        else:
+            img_input = raw_data.copy()
+
+        local_env = {
+            "img": img_input,
+            "viewer": self.viewer,
+            "np": np,
+            "ndi": ndi,
+            "filters": filters,
+            "morph": morph,
+            "seg": seg,
+            "exposure": exposure,
+            "feature": feature,
+            "PARAMS": dict(self.current_params),
+        }
+
+        code = self.editor.toPlainText()
+        try:
+            exec(code, local_env, local_env)
+        except Exception:
+            tb = traceback.format_exc()
+            self.log_message(tb, error=True)
+            return
+
+        # Record the exact code that just ran successfully
+        self.last_executed_code = code
+
+        if "PARAMS" in local_env and isinstance(local_env["PARAMS"], dict):
+            if set(local_env["PARAMS"].keys()) != set(self.current_params.keys()):
+                self.parse_params_and_build_ui()
+            else:
+                self.current_params.update(local_env["PARAMS"])
+
+        if "labels" in local_env or "mask" in local_env:
+            out_data = local_env.get("labels", local_env.get("mask"))
+            out_name = f"{layer_name} (Seg)"
+            is_labels = True
+        elif "result" in local_env:
+            out_data = local_env["result"]
+            out_name = f"{layer_name} (Result)"
+            is_labels = False
+        else:
+            self.log_message(
+                "Pipeline ran, but no output variable (`result`, `labels`, or `mask`) was assigned.",
+                error=True
+            )
+            return
+
+        out_data = np.asarray(out_data)
+        if is_labels and not np.issubdtype(out_data.dtype, np.integer):
+            out_data = out_data.astype(np.int32)
+
+        if is_sliced:
+            if out_name in self.viewer.layers and self.viewer.layers[out_name].data.shape == raw_data.shape:
+                full_out = self.viewer.layers[out_name].data
+            else:
+                full_out = np.zeros(raw_data.shape, dtype=out_data.dtype)
+            full_out[self.viewer.dims.current_step[:-2]] = out_data
+            final_data = full_out
+        else:
+            final_data = out_data
+
+        if out_name in self.viewer.layers:
+            target_layer = self.viewer.layers[out_name]
+            target_layer.data = final_data
+            target_layer.refresh()
+        else:
+            if is_labels:
+                self.viewer.add_labels(final_data, name=out_name, scale=source_layer.scale)
+            else:
+                self.viewer.add_image(
+                    final_data, name=out_name, scale=source_layer.scale, colormap="magma"
+                )
+
+        self.log_message(
+            f"Success! Updated '{out_name}' | shape={out_data.shape}, dtype={out_data.dtype}"
+        )
+
+    def log_message(self, msg: str, error: bool = False):
+        if error:
+            self.console.setStyleSheet("color: #ff6b6b; background-color: #2b1d1d;")
+        else:
+            self.console.setStyleSheet("color: #69db7c; background-color: #1e2620;")
+        self.console.setPlainText(msg)
