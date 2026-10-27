@@ -21,7 +21,7 @@ IMAGE_OBJECT_METADATA_TEMPLATE = {
     'zooms': None,
     'mag': None,
     'shape': None,
-    'init_image_format_target': 'STCZYX' # will try to parse input image so all these dimensions are filled
+    'init_image_format_target': 'STCZYX', # will try to parse input image so all these dimensions are filled
 }
 
 def fill_empty_metadata(found_metadata=None):
@@ -117,7 +117,17 @@ class ImageParser(ABC):
         if img_obj is None:
             img_obj = arr # just a pointer
 
-        self.params['image_metadata'] = fill_empty_metadata(self.extract_metadata(img_obj))   
+        self.params['image_metadata'] = fill_empty_metadata(self.extract_metadata(img_obj))
+        if self.params.get('data_metadata') is None: # try to fill neccesary keys
+            try:
+                fmt = img_obj.dims.order
+            except Exception as e:
+                print(f"error filling empty data_metadata:\n{e}")
+                fmt = None
+
+            self.params['data_metadata'] = {
+                'input_image_format': fmt
+            }  
         self.handle_channel_info(arr.shape)
 
         if self.error_msg:
@@ -147,7 +157,7 @@ class ImageParser(ABC):
         meta['input_image_format'] = meta['input_image_format'].upper()
         
         # Retrieve or handle empty channel info
-        ch_info = meta['channel_info'] or self._fill_empty_channel_info(arr_shape, meta['input_image_format'])
+        ch_info = meta.get('channel_info') or self._fill_empty_channel_info(arr_shape, meta['input_image_format'])
         
         # check if need to pattern match ch names for channel info wls/names
         filename = Path(self.file_path).name
@@ -373,7 +383,7 @@ class GeneralImageParser(ImageParser):
 
 
 def _has_bioformats() -> bool:
-    """determine if bioformats_jar is installed"""
+    """determine if bioformats_jar is installed, if not can try `pip install bioformats-jar`"""
     try:
         import bioformats_jar
         return True
@@ -569,8 +579,15 @@ class AICSImageParser(ImageParser):
         chs = self.get_channels(img_obj)
         ch_info = {}                        # -> {'EGFP-T1': 488.0, 'EBFP2-T2': 384.0, 'mCher-T2': 587.0}
         for c_i, ch in enumerate(chs):
+            name = ch.name                  # -> 'EBFP2-T2'
+            if name is None:
+                name = ch.id or str(c_i)
+
             wl = ch.excitation_wavelength   # -> 384.0
-            
+            if wl is None: # exit if not found, defaulting to input order
+                ch_info[name] = c_i
+                continue
+
             # find closest common wavelength 
             if len(wl_set) == 0:
                 print('common wavelenths exhausted, appending to end')
@@ -582,7 +599,6 @@ class AICSImageParser(ImageParser):
                     raise ValueError(closest_match) # this shouldn't occur
                 closest_match = closest_match[0]
             
-            name = ch.name                  # -> 'EBFP2-T2'
             ch_info[name] = closest_match
                 
         return ch_info
@@ -590,6 +606,7 @@ class AICSImageParser(ImageParser):
     def get_channels_inds_in_wl_order(self, img_obj) -> list[int]:
         """ returns indicies of channels in wavelength order """ 
         ch_names = img_obj.channel_names                                                        # -> ['EGFP-T1', 'EBFP2-T2', 'mCher-T2']
+        # sort by wavelength
         ch_ordered = sorted(self.get_channel_wavelengths(img_obj).items(), key=lambda x: x[1])  # -> [('EBFP2-T2', 384.0), ('EGFP-T1', 488.0), ('mCher-T2', 587.0)]
         ch_inds = [ch_names.index(tup[0]) for tup in ch_ordered]                                # -> [1, 0, 2]
         return ch_inds
