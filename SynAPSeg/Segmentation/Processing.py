@@ -33,8 +33,11 @@ def get_reader(img_path):
             reader=aicsimageio.readers.czi_reader.CziReader, 
             reconstruct_mosaic=False
         )
-    else:
-        pass
+    
+    image_parser = ImageParser.create_parser(img_path)
+    reader_cls = image_parser.read_file()
+    return reader_cls
+    
 
 # class Peeker:
 #     def __init__(self, img_path):
@@ -114,9 +117,15 @@ class DispatcherCollection:
         for i, image_path in enumerate(self.image_filepaths):
 
             # if processing an image file with multiple scenes
+            # TODO need generic implementation here - e.g. gets reader via image parser and checks if there are multiple scenes
             if image_path.endswith('.czi'):
                 czi = get_reader(image_path)
                 scene_ids = czi.scenes
+                for scene_id, scene_name in enumerate(scene_ids):
+                    self.add_dispatcher(image_path, SEG_CONFIG, scene_id, scene_name)
+            elif image_path.endswith('.lif'):
+                reader_cls = get_reader(image_path)
+                scene_ids = reader_cls.scenes
                 for scene_id, scene_name in enumerate(scene_ids):
                     self.add_dispatcher(image_path, SEG_CONFIG, scene_id, scene_name)
             else:
