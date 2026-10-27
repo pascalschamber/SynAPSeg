@@ -47,7 +47,8 @@ def write_array(arr, outdir, output_name, fmt=None, ex_md=None, tiff_metadata=No
     
     # save raw img as OME.TIFF for abba/qupath compatibility 
     if OUTPUT_IMAGE_PYRAMID:
-        
+        assert fmt is not None, "fmt is required for ome.tiff output"
+
         from SynAPSeg.utils.utils_image_processing import collapse_singleton_dims, transform_axes
         
         # get px scaling
@@ -62,11 +63,13 @@ def write_array(arr, outdir, output_name, fmt=None, ex_md=None, tiff_metadata=No
             px_size = scaling_info['X']
         
 
-        # reduce singleton dims and reformat so ch last
-        assert fmt is not None, "fmt is required for ome.tiff output"
+        # squeeze and reformat so ch first
+        # note: this used to be ch last but ome writer always generates an image where channels are first, 
+        # so in order to avoid confusion, we will also convert to ch first
+        
         arr, fmt = collapse_singleton_dims(arr, fmt)
-        out_fmt = fmt.replace('C', '') + 'C'
-        arr = transform_axes(arr, fmt, out_fmt) # move ch last
+        out_fmt = 'C' + fmt.replace('C', '')
+        arr = transform_axes(arr, fmt, out_fmt) # move ch first
         fmt = out_fmt
 
         # get channel names
@@ -99,7 +102,7 @@ def write_array(arr, outdir, output_name, fmt=None, ex_md=None, tiff_metadata=No
 
 
 
-def arr2ome(outpath, arr, fmt, channel_names, px_size, ch_last=True):
+def arr2ome(outpath, arr, fmt, channel_names, px_size):
     """ write an array to disk as a multi-scale OME.TIFF 
         args:
             outpath (str)
@@ -115,21 +118,28 @@ def arr2ome(outpath, arr, fmt, channel_names, px_size, ch_last=True):
     from SynAPSeg.IO.ome_pyramid_writer import generate_image_pyramids, pyramid_upgrade
     from SynAPSeg.utils.utils_image_processing import collapse_singleton_dims, transform_axes
     
-    # check chs length and move to channels last - as ch last fmt is required for ABBA
-    if ch_last:
-        out_fmt = fmt.replace('C', '') + 'C'
-        arr = transform_axes(arr, fmt, out_fmt) # move ch last
-        C = arr.shape[out_fmt.index('C')]
-        if not channel_names:
-            channel_names = [f'channel_{i}' for i in range(C)]
-        if len(channel_names) != C:
-            raise ValueError(f"Number of channel names ({channel_names}: n={len(channel_names)}) does not match number of channels ({C})")
-        
-        # convert to OME TIFF
-        generate_image_pyramids.main([arr[...,i] for i in range(C)], outpath, px_size=px_size)
-        pyramid_upgrade.main(outpath, channel_names)
-    else:
-        raise NotImplementedError
+    # check chs length and move to channels first
+    
+    debug_str = f"writing arr as OME.TIFF to `{outpath}`\n\input shape:{arr.shape}, format: {fmt}"
+
+    
+    out_fmt = 'C' + fmt.replace('C', '')
+    arr = transform_axes(arr, fmt, out_fmt) # move ch first
+    fmt = out_fmt
+
+    C = arr.shape[out_fmt.index('C')]
+    if not channel_names:
+        channel_names = [f'channel_{i}' for i in range(C)]
+    if len(channel_names) != C:
+        raise ValueError(f"Number of channel names ({channel_names}: n={len(channel_names)}) does not match number of channels ({C})")
+    
+    debug_str += f"post transform: shape:{arr.shape}, format: {out_fmt}"
+
+    # convert to OME TIFF
+    generate_image_pyramids.main([arr[i] for i in range(C)], outpath, px_size=px_size)
+    pyramid_upgrade.main(outpath, channel_names)
+    print(f"arr2ome debug string:\n{debug_str}\n\n")
+    
 
 
 
