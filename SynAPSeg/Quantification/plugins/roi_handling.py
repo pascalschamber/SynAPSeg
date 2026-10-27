@@ -510,8 +510,10 @@ class ROIAssigner:
             # we assume colocal_ids map directly to image channel indicies
             # but this could be more explicitly handled, if have access to imgdb object
             ch_axis = lbls_fmt.index('C')
-            if set(df['colocal_id'].unique()) != set(range(lbls.shape[ch_axis])):
-                raise ValueError(f"{set(df['colocal_id'].unique())} != {set(range(lbls.shape[ch_axis]))}")
+            
+            # check removed b/c doesn't handle case where some channels have no objects
+            # if set(df['colocal_id'].unique()) != set(range(lbls.shape[ch_axis])):
+            #     raise ValueError(f"{set(df['colocal_id'].unique())} != {set(range(lbls.shape[ch_axis]))}")
             
             computed['lbls'] = lbls
             computed['ch_axis'] = ch_axis

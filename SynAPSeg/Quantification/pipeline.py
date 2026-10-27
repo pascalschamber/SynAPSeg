@@ -9,6 +9,7 @@ import importlib.util
 from typing import Any, Dict, List
 
 from SynAPSeg.config import constants
+from SynAPSeg.IO.BaseConfig import BaseConfig
 from SynAPSeg.IO.BasePipelineComponent import BasePipelineComponent
 
 # from SynAPSeg.Plugins.base import BasePluginFactory
@@ -37,7 +38,7 @@ class Pipeline(BasePipelineComponent):
         `technically` supports validation-driven plugins but this is still # TODO item
     """
 
-    def __init__(self, config, logger=None):
+    def __init__(self, config:BaseConfig, logger=None):
         """
         Initializes the pipeline with an ordered list of stages.
         """

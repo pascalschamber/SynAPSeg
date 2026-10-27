@@ -87,7 +87,7 @@ class ExampleDispatcher(DispatcherBase):
         ###############################################################################
         # assert keys must not be None
         assert_keys = [
-            "OBJECTS_IMAGE_NAME",
+            # "OBJECTS_IMAGE_NAME",
             "INTENSITY_IMAGE_NAME",
             "FILE_MAP"
         ]
@@ -403,15 +403,17 @@ class ExampleDispatcher(DispatcherBase):
         # --- Phase 1: Process Main Images ---
         # Use the helper to process both images and sync their metadata
         img_fmt = self._standardize_and_sync(image_dict, int_key, config_param='img_fmt')
-        obj_fmt = self._standardize_and_sync(image_dict, obj_key, config_param='obj_fmt')
+        
+        if obj_key is not None:
+            obj_fmt = self._standardize_and_sync(image_dict, obj_key, config_param='obj_fmt')
 
-        # Validate compatibility
-        # TODO need to handle conversion of img -> obj format if they don't match
-        if img_fmt != obj_fmt:
-            raise ValueError(
-                f"Formats do not match: {int_key} ({image_dict[int_key].shape}) {img_fmt} "
-                f"!= {obj_key} ({image_dict[obj_key].shape}) {obj_fmt}"
-            )        # update config & exmd with collapsed formats and shapes
+            # Validate compatibility
+            # TODO need to handle conversion of img -> obj format if they don't match
+            if img_fmt != obj_fmt:
+                raise ValueError(
+                    f"Formats do not match: {int_key} ({image_dict[int_key].shape}) {img_fmt} "
+                    f"!= {obj_key} ({image_dict[obj_key].shape}) {obj_fmt}"
+                )        # update config & exmd with collapsed formats and shapes
         return image_dict
     
     def validate_roi_formats(self, image_dict) -> dict:
@@ -462,6 +464,12 @@ class ExampleDispatcher(DispatcherBase):
         is_arr = isinstance(image_dict[data_key], np.ndarray)
         if is_arr:
             return 'mask'
+        
+        import pandas as pd
+        is_napari_shapes = isinstance(image_dict[data_key], pd.DataFrame)
+        if is_napari_shapes:
+            return 'napari_shapes'
+        #TODO 
 
 
         from SynAPSeg.Plugins.ABBA.core_regionPoly import polyCollection

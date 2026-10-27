@@ -3,7 +3,7 @@ This module implements a base dispatcher class that is used by both ExampleDispa
 
 # TODO: restructure segmentation dispatcher to inherit from this
 """
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 import logging
 from pydantic import TypeAdapter, ValidationError as pyValErr
 
@@ -43,14 +43,12 @@ class DispatcherBase:
         """ handle setup and validation of config FILE_MAP key """
 
         err = ValidationError(
-            expected_type = dict[str, list[str]],
+            expected_type=dict[str, list[str | None] | None],
             possible_keys = ["images", "labels", "annotations", "ROIS"], # though can be empty lists and will be added if not present
             base_msg = base_msg,
         )
         
-
-        # Define the adapter
-        adapter = TypeAdapter(Dict[str, List[str]])
+        adapter = TypeAdapter(err.expected_type) # Define the adapter
 
         try: 
             adapter.validate_python(file_map)
@@ -60,8 +58,10 @@ class DispatcherBase:
         
         # after validating input is sound, set any non-present keys to be empty lists 
         for key in err.possible_keys:
-            if key not in file_map:
+            if key not in file_map or file_map[key] is None:
                 file_map[key] = []
+            else:
+                file_map[key] = [el for el in file_map[key] if el is not None]
 
 
 class DispatcherCollectionBase(BasePipelineComponent):
