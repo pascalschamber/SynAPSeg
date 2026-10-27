@@ -22,6 +22,13 @@ from functools import wraps
 from dataclasses import dataclass
 import tifffile
 
+try:
+    import zarr
+    _HAVE_ZARR = True
+except ImportError:
+    zarr = None
+    _HAVE_ZARR = False
+
 
 
 
@@ -375,9 +382,10 @@ class PyramidOMEReader:
 
     Notes:
         * Axis order follows tifffile's `Series.axes` ('TCZYX' or 'CZYX', etc.).
-        * `get_array` returns a numpy array; may optionally pass `indexers`
-        (a tuple of slices/ints/None per axis) to window or pick channels, timepoints, etc.
-        * For large images, prefer slicing to avoid loading entire planes.
+        * `get_array` returns a numpy array; supports ultra-fast windowed slicing
+          via named axis keyword arguments (`C=0, Z=slice(0, 16), Y=slice(100, 200), X=slice(100, 200)`),
+          dictionary indexers, or positional tuples matching `self.axes`.
+        * For large images, prefer windowed slicing to avoid loading unneeded tiles/planes.
     
     Example usage:
         ometiffpath = "raw_img.ome.tiff"
@@ -394,11 +402,25 @@ class PyramidOMEReader:
         # Grab the full pyramid level 2 array (e.g., for a quick whole-slide view)
         arr_lv2 = reader.get_array(level=2)
 
-        # Grab a window at level 0: first timepoint, first channel, all Z, Y[0:4096], X[0:4096]
-        # Assuming axes 'TCZYX'
+        # 1. Grab a window at level 0 using named axis keyword arguments:
         win = reader.get_array(
             level=0,
-            # indexers=(0, 0, slice(None), slice(0, 4096), slice(0, 4096)), # currently not working
+            C=0,
+            Z=slice(0, 16),
+            Y=slice(100, 200),
+            X=slice(100, 200),
+        )
+
+        # 2. Or using a dictionary with string slice notation:
+        win = reader.get_array(
+            level=0,
+            indexers={'C': 0, 'Z': '0:16', 'Y': '100:200', 'X': '100:200'}
+        )
+
+        # 3. Or using positional indexers (matching axes, e.g. 'TCZYX'):
+        win = reader.get_array(
+            level=0,
+            indexers=(0, 0, slice(0, 16), slice(100, 200), slice(100, 200)),
             squeeze=True
         )
     """
@@ -539,58 +561,84 @@ class PyramidOMEReader:
     def get_array(
         self,
         level: int = 0,
-        indexers: Optional[Tuple[Union[int, slice, None], ...]] = None,
+        indexers: Optional[Union[Tuple[Any, ...], Dict[str, Any], Sequence[Any], slice, int, str]] = None,
         dtype: Optional[np.dtype] = None,
         squeeze: bool = False,
         copy: bool = True,
+        **axis_kwargs: Any,
     ) -> np.ndarray:
         """
         Load pixels from the specified pyramid `level` into a NumPy array.
 
+        Supports ultra-fast windowed subregion reads via Zarr/TiffPageSeries without
+        loading the entire image or unrequested tiles/planes into memory.
+
         Parameters
         ----------
         level : int
-            Pyramid level to read (0 = full resolution).
-        indexers : tuple[int|slice|None, ...], optional # NOT IMPLEMENTED
-            Per-axis indexers (in the same order as `self.axes`), used to window
-            or pick specific T/C/Z/XY ranges without loading the entire array.
-            For example:
-              - pick channel 0 from 'TCZYX': indexers=(0, 0, slice(None), slice(None), slice(None))
-              - window spatial: indexers=(..., slice(y0,y1), slice(x0,x1))
-            If None, the entire level is read.
+            Pyramid level to read (0 = full resolution). Supports negative indexing (e.g. -1 for lowest res).
+        indexers : tuple, list, dict, slice, int, or str, optional
+            Per-axis indexers used to window or pick specific T/C/Z/Y/X ranges.
+            Can be provided in multiple formats:
+              - By axis keyword arguments:
+                  get_array(level=0, C=0, Z=slice(0, 16), Y=slice(100, 200), X=slice(100, 200))
+                  get_array(level=0, C=0, Y="100:200", X="100:200")
+              - By dictionary:
+                  get_array(level=0, indexers={'C': 0, 'Z': slice(0, 16), 'Y': slice(100, 200), 'X': slice(100, 200)})
+              - By positional tuple / sequence matching `self.axes`:
+                  get_array(level=0, indexers=(0, slice(0, 16), slice(100, 200), slice(100, 200)))
+                  get_array(level=0, indexers=(0, ..., slice(100, 200), slice(100, 200)))
+                  get_array(level=0, indexers=(0, None, slice(100, 200), slice(100, 200)))
+            If None (and no axis kwargs are provided), the entire level is read.
         dtype : np.dtype, optional
             If provided, cast the result to this dtype.
         squeeze : bool
             If True, squeeze singleton axes.
         copy : bool
-            If True, ensure the returned array owns its memory
+            If True, ensure the returned array owns its memory.
+        **axis_kwargs : int, slice, str, None
+            Convenient axis-named slicing arguments (e.g. C=0, Z=slice(0, 16), Y=slice(100, 200), X=slice(100, 200)).
+            Case-insensitive.
 
         Returns
         -------
         np.ndarray
+            Loaded pixel data for the requested slice/window.
         """
-        if level < 0: # handle negative indicies e.g. -1 returns last level 
+        if level < 0: # handle negative indices e.g. -1 returns last level
             level = self.num_levels + level
             
         if not (0 <= level < self.num_levels):
             raise IndexError(f"Level {level} out of range (0..{self.num_levels-1}).")
 
+        lev_info = self._levels[level]
+        norm_indexers = self._normalize_indexers(indexers, axes=lev_info.axes, axis_kwargs=axis_kwargs)
+
         with tifffile.TiffFile(self._path) as tf:
             s = tf.series[self._series_index]
-            
-            # testing using zarr; supports slicing efficiently
-            # (tifffile builds a VirtualStack as needed).
-            # zarr_arr = s.aszarr(level=level)
-            # print(dir(zarr_arr))
-            # print(help(zarr_arr))
 
-            if indexers is None:
+            # Fast path 1: Entire array requested -> s.asarray is fastest for bulk uncompressed/full plane reads
+            is_full_slice = norm_indexers is None or all(
+                isinstance(idx, slice) and idx.start is None and idx.stop is None and (idx.step is None or idx.step == 1)
+                for idx in norm_indexers
+            )
+
+            if is_full_slice:
                 arr = s.asarray(level=level)
             else:
-                raise NotImplementedError
-                # Normalize indexers to full rank
-                indexers = self._normalize_indexers(indexers, ndim=zarr_arr.ndim)
-                arr = np.asarray(zarr_arr[indexers])
+                # Fast path 2: Windowed subregion read via Zarr chunk store
+                if _HAVE_ZARR:
+                    try:
+                        z_store = s.aszarr(level=level)
+                        z_arr = zarr.Array(z_store, read_only=True)
+                        arr = np.asarray(z_arr[norm_indexers])
+                    except Exception:
+                        # Fallback if zarr extraction fails on unusual TIFF format
+                        full_arr = s.asarray(level=level)
+                        arr = np.asarray(full_arr[norm_indexers])
+                else:
+                    full_arr = s.asarray(level=level)
+                    arr = np.asarray(full_arr[norm_indexers])
 
         if dtype is not None and arr.dtype != dtype:
             arr = arr.astype(dtype, copy=False)
@@ -613,12 +661,75 @@ class PyramidOMEReader:
         return y_idx, x_idx
 
     @staticmethod
-    def _normalize_indexers(indexers: Tuple[Union[int, slice, None], ...], ndim: int):
-        if len(indexers) > ndim:
-            raise IndexError(f"Too many indexers: got {len(indexers)}, array ndim={ndim}.")
-        # pad with slice(None) for unspecified trailing axes
-        padded = list(indexers) + [slice(None)] * (ndim - len(indexers))
-        return tuple(padded)
+    def _normalize_indexers(
+        indexers: Optional[Union[Dict[str, Any], Sequence[Any], slice, int, str]],
+        axes: str,
+        axis_kwargs: Optional[Dict[str, Any]] = None,
+    ) -> Optional[Tuple[Union[int, slice], ...]]:
+        """
+        Normalize various indexing formats (tuples, slices, dicts, kwargs, string slices)
+        into a concrete tuple of (int | slice) matching the length and order of `axes`.
+        """
+        ndim = len(axes)
+
+        # 1. Handle dictionary or keyword-based named axes indexing
+        combined_dict: Dict[str, Any] = {}
+        if isinstance(indexers, dict):
+            combined_dict.update(indexers)
+        if axis_kwargs:
+            if indexers is not None and not isinstance(indexers, dict):
+                raise ValueError("Cannot specify both positional indexers and axis keyword arguments.")
+            combined_dict.update(axis_kwargs)
+
+        if combined_dict:
+            axis_map = {ax.upper(): i for i, ax in enumerate(axes)}
+            idx_list: List[Union[int, slice]] = [slice(None)] * ndim
+            for k, v in combined_dict.items():
+                k_up = k.upper()
+                if k_up not in axis_map:
+                    raise ValueError(f"Axis '{k}' not found in image axes '{axes}'.")
+                parsed = _parse_slice_like(v)
+                idx_list[axis_map[k_up]] = slice(None) if parsed is None else parsed
+            return tuple(idx_list)
+
+        if indexers is None:
+            return None
+
+        # 2. Handle scalar int, slice, or string slice passed directly
+        if isinstance(indexers, (int, slice, str)):
+            indexers = (indexers,)
+
+        idx_list_raw = list(indexers)
+
+        # 3. Handle Ellipsis (...)
+        if Ellipsis in idx_list_raw:
+            if idx_list_raw.count(Ellipsis) > 1:
+                raise IndexError("An index can only have a single ellipsis ('...')")
+            e_idx = idx_list_raw.index(Ellipsis)
+            num_missing = ndim - (len(idx_list_raw) - 1)
+            if num_missing < 0:
+                raise IndexError(
+                    f"Too many indexers: got {len(idx_list_raw) - 1} + ellipsis, expected at most {ndim}."
+                )
+            idx_list_raw = idx_list_raw[:e_idx] + [slice(None)] * num_missing + idx_list_raw[e_idx + 1:]
+
+        if len(idx_list_raw) > ndim:
+            raise IndexError(f"Too many indexers: got {len(idx_list_raw)}, expected at most {ndim} for axes '{axes}'.")
+
+        # 4. Pad trailing unmentioned dimensions with slice(None)
+        if len(idx_list_raw) < ndim:
+            idx_list_raw.extend([slice(None)] * (ndim - len(idx_list_raw)))
+
+        # 5. Parse strings like "0:100" and normalize None -> slice(None)
+        normalized: List[Union[int, slice]] = []
+        for elem in idx_list_raw:
+            if elem is None:
+                normalized.append(slice(None))
+            else:
+                parsed = _parse_slice_like(elem)
+                normalized.append(slice(None) if parsed is None else parsed)
+
+        return tuple(normalized)
 
     @staticmethod
     def _build_meta_summary(ome_xml: Optional[str]) -> Dict[str, Any]:
@@ -658,6 +769,33 @@ class PyramidOMEReader:
         summary["ome_xml_raw_present"] = True
         return summary
 
+def test_reader():
+    # from SynAPSeg.IO.readers import PyramidOMEReader
+
+    reader = PyramidOMEReader(r"E:\TEL_PROJECTS\examples\TEL15_s000_1-3\raw_image.ome.tiff")
+
+    # tiny region (cell)
+    t0=ug.dt()
+    subregion = reader.get_array(
+        level=0,
+        C=slice(0, 1),
+        Y=slice(2560, 2580),
+        X=slice(2560, 2580),
+    )
+    print("\nShape of requested subregion:", subregion.shape, f"\ntook: {ug.dt()-t0}")
+
+    t0=ug.dt()
+    subregion = reader.get_array(
+        level=0,
+        C=slice(None),
+        Y=slice(2500, 3000),
+        X=slice(2500, 3000),
+    )
+    print("\nShape of requested subregion:", subregion.shape, f"\ntook: {ug.dt()-t0}")
+
+    t0=ug.dt()
+    subregion = reader.get_array(level=0)
+    print("\nShape of requested subregion:", subregion.shape, f"\ntook: {ug.dt()-t0}")
 
 
 import struct
